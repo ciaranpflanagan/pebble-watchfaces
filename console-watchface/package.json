@@ -23,7 +23,7 @@
       "media": [
         {
           "type": "font",
-          "name": "SPACE_GROTESK_62",
+          "name": "SPACE_GROTESK_72",
           "file": "fonts/SpaceGrotesk-SemiBold.ttf",
           "compatibility": "2.7",
           "characterRegex": "[0-9:]"

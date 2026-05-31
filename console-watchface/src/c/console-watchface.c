@@ -37,10 +37,11 @@
 
 // Main time — full-width custom layer; text measured and centred at runtime.
 // Layer covers the full 200px width so centering math is simple (÷ 2).
-// Vertical target: centre ≈ y 112. With TIME_H=80 and font ascender ~35px
-// from top of layer: visual centre ≈ TIME_Y + 35 ≈ 78 + 35 = 113. ✓
-#define TIME_Y   78
-#define TIME_H   80
+// At 72px SpaceGrotesk tabular, "HH:MM" ≈ 196px — nearly edge-to-edge.
+// Vertical target: centre ≈ y 112. With TIME_H=92 and font ascender ~40px
+// from top of layer: visual centre ≈ TIME_Y + 40 ≈ 72 + 40 = 112. ✓
+#define TIME_Y   72
+#define TIME_H   92
 
 // Footer chrome
 #define HAIRLINE_Y    179
@@ -82,7 +83,7 @@ static Layer     *s_chrome_layer;
 static TextLayer *s_dublin_label_layer;
 static TextLayer *s_dublin_time_layer;
 
-static GFont s_font_grotesk_62;
+static GFont s_font_grotesk_72;
 static GFont s_font_grotesk_24;
 static GFont s_font_grotesk_22;
 static GFont s_font_mono_18;
@@ -184,11 +185,11 @@ static void time_layer_update_proc(Layer *layer, GContext *ctx) {
 
   // Measure each piece at actual font metrics
   GSize hh_sz     = graphics_text_layout_get_content_size(
-    s_hours_buf,   s_font_grotesk_62, measure, GTextOverflowModeWordWrap, GTextAlignmentLeft);
+    s_hours_buf,   s_font_grotesk_72, measure, GTextOverflowModeWordWrap, GTextAlignmentLeft);
   GSize colon_sz  = graphics_text_layout_get_content_size(
-    ":",           s_font_grotesk_62, measure, GTextOverflowModeWordWrap, GTextAlignmentLeft);
+    ":",           s_font_grotesk_72, measure, GTextOverflowModeWordWrap, GTextAlignmentLeft);
   GSize mm_sz     = graphics_text_layout_get_content_size(
-    s_minutes_buf, s_font_grotesk_62, measure, GTextOverflowModeWordWrap, GTextAlignmentLeft);
+    s_minutes_buf, s_font_grotesk_72, measure, GTextOverflowModeWordWrap, GTextAlignmentLeft);
 
   // Centre the group on the 200px layer
   int16_t total_w = hh_sz.w + colon_sz.w + mm_sz.w;
@@ -196,19 +197,19 @@ static void time_layer_update_proc(Layer *layer, GContext *ctx) {
 
   // HH — white
   graphics_context_set_text_color(ctx, GColorWhite);
-  graphics_draw_text(ctx, s_hours_buf, s_font_grotesk_62,
+  graphics_draw_text(ctx, s_hours_buf, s_font_grotesk_72,
     GRect(x, 0, hh_sz.w + 2, TIME_H), GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
   x += hh_sz.w;
 
   // : — accent orange
   graphics_context_set_text_color(ctx, COLOR_ACCENT);
-  graphics_draw_text(ctx, ":", s_font_grotesk_62,
+  graphics_draw_text(ctx, ":", s_font_grotesk_72,
     GRect(x, 0, colon_sz.w + 2, TIME_H), GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
   x += colon_sz.w;
 
   // MM — white
   graphics_context_set_text_color(ctx, GColorWhite);
-  graphics_draw_text(ctx, s_minutes_buf, s_font_grotesk_62,
+  graphics_draw_text(ctx, s_minutes_buf, s_font_grotesk_72,
     GRect(x, 0, mm_sz.w + 2, TIME_H), GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
 }
 
@@ -289,7 +290,7 @@ static void prv_window_load(Window *window) {
   Layer *root = window_get_root_layer(window);
   window_set_background_color(window, GColorBlack);
 
-  s_font_grotesk_62 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_SPACE_GROTESK_62));
+  s_font_grotesk_72 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_SPACE_GROTESK_72));
   s_font_grotesk_24 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_SPACE_GROTESK_24));
   s_font_grotesk_22 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_SPACE_GROTESK_22));
   s_font_mono_18    = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_SPACE_MONO_18));
@@ -369,7 +370,7 @@ static void prv_window_unload(Window *window) {
   text_layer_destroy(s_dublin_label_layer);
   text_layer_destroy(s_dublin_time_layer);
 
-  fonts_unload_custom_font(s_font_grotesk_62);
+  fonts_unload_custom_font(s_font_grotesk_72);
   fonts_unload_custom_font(s_font_grotesk_24);
   fonts_unload_custom_font(s_font_grotesk_22);
   fonts_unload_custom_font(s_font_mono_18);
