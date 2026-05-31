@@ -23,7 +23,8 @@
       "watchface": true
     },
     "messageKeys": [
-      "dummy"
+      "WEATHER_TEMP",
+      "WEATHER_ICON"
     ],
     "resources": {
       "media": []
