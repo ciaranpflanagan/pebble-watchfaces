@@ -1,0 +1,33 @@
+{
+    "displayName": "timezone-watchface",
+    "uuid": "dda56a60-9a6a-40ee-b8e8-571afcbdfbc9",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+        "aplite",
+        "basalt",
+        "chalk",
+        "diorite",
+        "emery",
+        "flint",
+        "gabbro"
+    ],
+    "watchapp": {
+        "watchface": true
+    },
+    "messageKeys": {
+        "dummy": 10000
+    },
+    "resources": {
+        "media": []
+    },
+    "name": "timezone-watchface",
+    "shortName": "timezone-watchface",
+    "longName": "timezone-watchface",
+    "versionLabel": "1.0.0",
+    "companyName": "MakeAwesomeHappen",
+    "appKeys": {
+        "dummy": 10000
+    },
+    "capabilities": []
+}
