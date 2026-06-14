@@ -4,55 +4,54 @@
 // ---------------------------------------------------------------------------
 // Design tokens
 // ---------------------------------------------------------------------------
-#define COLOR_ACCENT     GColorSunsetOrange   // same in both themes
-#define PERSIST_KEY_INVERTED  0               // persistent storage key
+#define COLOR_ACCENT  GColorSunsetOrange
 
 // Screen geometry (emery: 200 × 228)
 #define SAFE_L  16
 #define SAFE_R  184
 #define SAFE_T  16
-#define SAFE_B  214   // 228 − 14 bottom padding
+#define SAFE_B  214
+
+// ---------------------------------------------------------------------------
+// Persistent storage keys
+// ---------------------------------------------------------------------------
+#define PERSIST_THEME      0
+#define PERSIST_TEMP_UNIT  1
+#define PERSIST_TZ_OFFSET  2
+#define PERSIST_TZ_LABEL   3
 
 // ---------------------------------------------------------------------------
 // Layout
 // ---------------------------------------------------------------------------
-
-// Header
-#define WEEKDAY_Y   SAFE_T   // 16
+#define WEEKDAY_Y   SAFE_T
 #define WEEKDAY_H   18
 #define DATE_Y      32
 #define DATE_H      24
 
-// Weather group — icon 26×26 | 6px gap | temp right-aligned to SAFE_R
 #define WX_ICON_W   26
 #define WX_ICON_H   26
 #define WX_TEMP_W   50
 #define WX_GAP      6
-#define WX_ICON_X   (SAFE_R - WX_TEMP_W - WX_GAP - WX_ICON_W + 16)  // 118
-#define WX_ICON_Y   (SAFE_T + 4)                                       // 20
+#define WX_ICON_X   (SAFE_R - WX_TEMP_W - WX_GAP - WX_ICON_W + 16)
+#define WX_ICON_Y   (SAFE_T + 4)
 #define WX_TEMP_X   (WX_ICON_X + WX_ICON_W + WX_GAP)
 #define WX_TEMP_Y   20
 #define WX_TEMP_H   28
 
-// Main time — full-width custom layer; text measured and centred at runtime.
-// At 72px SpaceGrotesk tabular, "HH:MM" ≈ 196px — nearly edge-to-edge.
-// Vertical target: centre ≈ y 112. With TIME_H=92 and font ascender ~40px
-// from top of layer: visual centre ≈ TIME_Y + 40 ≈ 72 + 40 = 112. ✓
 #define TIME_Y   72
 #define TIME_H   92
 
-// Footer chrome
 #define HAIRLINE_Y    179
-#define CHROME_H      (SAFE_B - HAIRLINE_Y)    // 35
-#define DOT_R         3                         // diameter 7px
-#define DOT_X         (SAFE_L + DOT_R + 0)     // 19
-#define DOT_Y_LOCAL   22     // in chrome-layer coords → absolute y = 201
-#define FOOTER_LABEL_X   (SAFE_L + (DOT_R*2+1) + 7)   // 30
+#define CHROME_H      (SAFE_B - HAIRLINE_Y)
+#define DOT_R         3
+#define DOT_X         (SAFE_L + DOT_R)
+#define DOT_Y_LOCAL   22
+#define FOOTER_LABEL_X   (SAFE_L + (DOT_R*2+1) + 7)
 #define FOOTER_LABEL_Y   194
 #define FOOTER_LABEL_H   16
 #define FOOTER_TIME_X    100
 #define FOOTER_TIME_Y    190
-#define FOOTER_TIME_W    (SAFE_R - FOOTER_TIME_X)      // 84
+#define FOOTER_TIME_W    (SAFE_R - FOOTER_TIME_X)
 #define FOOTER_TIME_H    24
 
 // ---------------------------------------------------------------------------
@@ -78,8 +77,8 @@ static Layer     *s_weather_icon_layer;
 static TextLayer *s_weather_temp_layer;
 static Layer     *s_time_layer;
 static Layer     *s_chrome_layer;
-static TextLayer *s_dublin_label_layer;
-static TextLayer *s_dublin_time_layer;
+static TextLayer *s_tz_label_layer;
+static TextLayer *s_tz_time_layer;
 
 static GFont s_font_grotesk_72;
 static GFont s_font_grotesk_24;
@@ -88,19 +87,21 @@ static GFont s_font_mono_18;
 static GFont s_font_mono_14;
 static GFont s_font_mono_13;
 
-static WeatherIconType s_weather_icon  = ICON_UNKNOWN;
-static int             s_dublin_offset = 60;
-static bool            s_inverted      = true;    // light/dark toggle
+static WeatherIconType s_weather_icon   = ICON_UNKNOWN;
+static int             s_tz_offset      = 60;       // UTC offset for second zone (mins)
+static bool            s_inverted       = true;     // light/dark theme
+static bool            s_use_fahrenheit = false;
 
 static char s_weekday_buf[6];
 static char s_date_buf[12];
 static char s_weather_temp_buf[16];
 static char s_hours_buf[3];
 static char s_minutes_buf[3];
-static char s_dublin_time_buf[6];
+static char s_tz_time_buf[6];
+static char s_tz_label_buf[16];
 
 // ---------------------------------------------------------------------------
-// Theme helpers — all colour decisions go through these
+// Theme helpers
 // ---------------------------------------------------------------------------
 static GColor fg_color(void) {
   return s_inverted ? GColorBlack : GColorWhite;
@@ -109,23 +110,16 @@ static GColor muted_color(void) {
   return s_inverted ? GColorDarkGray : GColorLightGray;
 }
 static GColor hairline_color(void) {
-  // Visible but quiet on both backgrounds
   return s_inverted ? GColorLightGray : GColorDarkGray;
 }
 
-// Recolours every layer and redraws custom layers.
-// Call once after window load and again on each toggle.
 static void apply_theme(void) {
-  GColor bg = s_inverted ? GColorWhite : GColorBlack;
-  window_set_background_color(s_window, bg);
-
-  text_layer_set_text_color(s_weekday_layer,      muted_color());
-  text_layer_set_text_color(s_date_layer,          fg_color());
-  text_layer_set_text_color(s_weather_temp_layer,  fg_color());
-  text_layer_set_text_color(s_dublin_label_layer,  muted_color());
-  text_layer_set_text_color(s_dublin_time_layer,   fg_color());
-
-  // Custom-drawn layers pick up theme via fg_color() / hairline_color()
+  window_set_background_color(s_window, s_inverted ? GColorWhite : GColorBlack);
+  text_layer_set_text_color(s_weekday_layer,     muted_color());
+  text_layer_set_text_color(s_date_layer,         fg_color());
+  text_layer_set_text_color(s_weather_temp_layer, fg_color());
+  text_layer_set_text_color(s_tz_label_layer,     muted_color());
+  text_layer_set_text_color(s_tz_time_layer,      fg_color());
   layer_mark_dirty(s_weather_icon_layer);
   layer_mark_dirty(s_time_layer);
   layer_mark_dirty(s_chrome_layer);
@@ -221,8 +215,7 @@ static void time_layer_update_proc(Layer *layer, GContext *ctx) {
   GSize mm_sz    = graphics_text_layout_get_content_size(
     s_minutes_buf, s_font_grotesk_72, measure, GTextOverflowModeWordWrap, GTextAlignmentLeft);
 
-  int16_t total_w = hh_sz.w + colon_sz.w + mm_sz.w;
-  int16_t x       = (200 - total_w) / 2;
+  int16_t x = (200 - hh_sz.w - colon_sz.w - mm_sz.w) / 2;
 
   graphics_context_set_text_color(ctx, fg_color());
   graphics_draw_text(ctx, s_hours_buf, s_font_grotesk_72,
@@ -240,13 +233,12 @@ static void time_layer_update_proc(Layer *layer, GContext *ctx) {
 }
 
 // ---------------------------------------------------------------------------
-// Footer chrome: hairline + accent dot
+// Footer chrome
 // ---------------------------------------------------------------------------
 static void chrome_update_proc(Layer *layer, GContext *ctx) {
   graphics_context_set_stroke_color(ctx, hairline_color());
   graphics_context_set_stroke_width(ctx, 1);
   graphics_draw_line(ctx, GPoint(SAFE_L, 0), GPoint(SAFE_R, 0));
-
   graphics_context_set_fill_color(ctx, COLOR_ACCENT);
   graphics_fill_circle(ctx, GPoint(DOT_X, DOT_Y_LOCAL), DOT_R);
 }
@@ -271,29 +263,14 @@ static void update_display(struct tm *local_tm, time_t utc) {
   strftime(s_minutes_buf, sizeof(s_minutes_buf), "%M", local_tm);
   layer_mark_dirty(s_time_layer);
 
-  time_t dub_utc = utc + (time_t)(s_dublin_offset * 60);
-  struct tm *dub_tm = gmtime(&dub_utc);
-  strftime(s_dublin_time_buf, sizeof(s_dublin_time_buf), "%H:%M", dub_tm);
-  text_layer_set_text(s_dublin_time_layer, s_dublin_time_buf);
+  time_t tz_utc = utc + (time_t)(s_tz_offset * 60);
+  struct tm *tz_tm = gmtime(&tz_utc);
+  strftime(s_tz_time_buf, sizeof(s_tz_time_buf), "%H:%M", tz_tm);
+  text_layer_set_text(s_tz_time_layer, s_tz_time_buf);
 }
 
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   update_display(tick_time, time(NULL));
-}
-
-// ---------------------------------------------------------------------------
-// Theme toggle — SELECT button cycles dark ↔ light
-// ---------------------------------------------------------------------------
-static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
-  s_inverted = !s_inverted;
-  persist_write_bool(PERSIST_KEY_INVERTED, s_inverted);
-  apply_theme();
-}
-
-static void click_config_provider(void *context) {
-  // Single clicks on UP/DOWN/SELECT are claimed by the system in watchface mode
-  // (timeline and quick launch). Long-press DOWN is the only reliable hook.
-  window_long_click_subscribe(BUTTON_ID_DOWN, 700, select_click_handler, NULL);
 }
 
 // ---------------------------------------------------------------------------
@@ -302,11 +279,15 @@ static void click_config_provider(void *context) {
 static void prv_inbox_received(DictionaryIterator *iter, void *context) {
   Tuple *temp_t   = dict_find(iter, MESSAGE_KEY_WEATHER_TEMP);
   Tuple *icon_t   = dict_find(iter, MESSAGE_KEY_WEATHER_ICON);
-  Tuple *offset_t = dict_find(iter, MESSAGE_KEY_DUBLIN_OFFSET);
+  Tuple *offset_t = dict_find(iter, MESSAGE_KEY_SETTINGS_TZ_OFFSET);
+  Tuple *label_t  = dict_find(iter, MESSAGE_KEY_SETTINGS_TZ_LABEL);
+  Tuple *unit_t   = dict_find(iter, MESSAGE_KEY_SETTINGS_TEMP_UNIT);
+  Tuple *theme_t  = dict_find(iter, MESSAGE_KEY_SETTINGS_THEME);
 
   if (temp_t) {
     snprintf(s_weather_temp_buf, sizeof(s_weather_temp_buf),
-             "%d\xc2\xb0", (int)temp_t->value->int32);
+             "%d\xc2\xb0%c", (int)temp_t->value->int32,
+             s_use_fahrenheit ? 'F' : 'C');
     text_layer_set_text(s_weather_temp_layer, s_weather_temp_buf);
   }
   if (icon_t) {
@@ -314,9 +295,26 @@ static void prv_inbox_received(DictionaryIterator *iter, void *context) {
     layer_mark_dirty(s_weather_icon_layer);
   }
   if (offset_t) {
-    s_dublin_offset = (int)offset_t->value->int32;
+    s_tz_offset = (int)offset_t->value->int32;
+    persist_write_int(PERSIST_TZ_OFFSET, s_tz_offset);
     time_t utc = time(NULL);
     update_display(localtime(&utc), utc);
+  }
+  if (label_t) {
+    strncpy(s_tz_label_buf, label_t->value->cstring, sizeof(s_tz_label_buf) - 1);
+    s_tz_label_buf[sizeof(s_tz_label_buf) - 1] = '\0';
+    persist_write_string(PERSIST_TZ_LABEL, s_tz_label_buf);
+    text_layer_set_text(s_tz_label_layer, s_tz_label_buf);
+  }
+  if (unit_t) {
+    s_use_fahrenheit = (bool)unit_t->value->int32;
+    persist_write_bool(PERSIST_TEMP_UNIT, s_use_fahrenheit);
+    // Refresh temp display with new unit suffix (value arrives on next weather fetch)
+  }
+  if (theme_t) {
+    s_inverted = (bool)theme_t->value->int32;
+    persist_write_bool(PERSIST_THEME, s_inverted);
+    apply_theme();
   }
 }
 
@@ -337,24 +335,20 @@ static void prv_window_load(Window *window) {
   s_font_mono_14    = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_SPACE_MONO_14));
   s_font_mono_13    = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_SPACE_MONO_13));
 
-  // Weekday
   s_weekday_layer = text_layer_create(GRect(SAFE_L, WEEKDAY_Y, 100, WEEKDAY_H));
   text_layer_set_font(s_weekday_layer, s_font_mono_13);
   text_layer_set_background_color(s_weekday_layer, GColorClear);
   layer_add_child(root, text_layer_get_layer(s_weekday_layer));
 
-  // Date
   s_date_layer = text_layer_create(GRect(SAFE_L, DATE_Y, 130, DATE_H));
   text_layer_set_font(s_date_layer, s_font_mono_18);
   text_layer_set_background_color(s_date_layer, GColorClear);
   layer_add_child(root, text_layer_get_layer(s_date_layer));
 
-  // Weather icon
   s_weather_icon_layer = layer_create(GRect(WX_ICON_X, WX_ICON_Y, WX_ICON_W, WX_ICON_H));
   layer_set_update_proc(s_weather_icon_layer, weather_icon_update_proc);
   layer_add_child(root, s_weather_icon_layer);
 
-  // Weather temp
   strncpy(s_weather_temp_buf, "--", sizeof(s_weather_temp_buf));
   s_weather_temp_layer = text_layer_create(GRect(WX_TEMP_X, WX_TEMP_Y, WX_TEMP_W, WX_TEMP_H));
   text_layer_set_font(s_weather_temp_layer, s_font_grotesk_24);
@@ -362,35 +356,30 @@ static void prv_window_load(Window *window) {
   text_layer_set_text(s_weather_temp_layer, s_weather_temp_buf);
   layer_add_child(root, text_layer_get_layer(s_weather_temp_layer));
 
-  // Main time
   strncpy(s_hours_buf,   "--", sizeof(s_hours_buf));
   strncpy(s_minutes_buf, "--", sizeof(s_minutes_buf));
   s_time_layer = layer_create(GRect(0, TIME_Y, 200, TIME_H));
   layer_set_update_proc(s_time_layer, time_layer_update_proc);
   layer_add_child(root, s_time_layer);
 
-  // Footer chrome
   s_chrome_layer = layer_create(GRect(0, HAIRLINE_Y, 200, CHROME_H));
   layer_set_update_proc(s_chrome_layer, chrome_update_proc);
   layer_add_child(root, s_chrome_layer);
 
-  // DUBLIN label
-  s_dublin_label_layer = text_layer_create(
+  s_tz_label_layer = text_layer_create(
     GRect(FOOTER_LABEL_X, FOOTER_LABEL_Y, 80, FOOTER_LABEL_H));
-  text_layer_set_font(s_dublin_label_layer, s_font_mono_14);
-  text_layer_set_background_color(s_dublin_label_layer, GColorClear);
-  text_layer_set_text(s_dublin_label_layer, "DUBLIN");
-  layer_add_child(root, text_layer_get_layer(s_dublin_label_layer));
+  text_layer_set_font(s_tz_label_layer, s_font_mono_14);
+  text_layer_set_background_color(s_tz_label_layer, GColorClear);
+  text_layer_set_text(s_tz_label_layer, s_tz_label_buf);
+  layer_add_child(root, text_layer_get_layer(s_tz_label_layer));
 
-  // Dublin time
-  s_dublin_time_layer = text_layer_create(
+  s_tz_time_layer = text_layer_create(
     GRect(FOOTER_TIME_X, FOOTER_TIME_Y, FOOTER_TIME_W, FOOTER_TIME_H));
-  text_layer_set_font(s_dublin_time_layer, s_font_grotesk_22);
-  text_layer_set_background_color(s_dublin_time_layer, GColorClear);
-  text_layer_set_text_alignment(s_dublin_time_layer, GTextAlignmentRight);
-  layer_add_child(root, text_layer_get_layer(s_dublin_time_layer));
+  text_layer_set_font(s_tz_time_layer, s_font_grotesk_22);
+  text_layer_set_background_color(s_tz_time_layer, GColorClear);
+  text_layer_set_text_alignment(s_tz_time_layer, GTextAlignmentRight);
+  layer_add_child(root, text_layer_get_layer(s_tz_time_layer));
 
-  // Apply saved theme, then populate text
   apply_theme();
   time_t utc = time(NULL);
   update_display(localtime(&utc), utc);
@@ -403,8 +392,8 @@ static void prv_window_unload(Window *window) {
   text_layer_destroy(s_weather_temp_layer);
   layer_destroy(s_time_layer);
   layer_destroy(s_chrome_layer);
-  text_layer_destroy(s_dublin_label_layer);
-  text_layer_destroy(s_dublin_time_layer);
+  text_layer_destroy(s_tz_label_layer);
+  text_layer_destroy(s_tz_time_layer);
 
   fonts_unload_custom_font(s_font_grotesk_72);
   fonts_unload_custom_font(s_font_grotesk_24);
@@ -418,13 +407,17 @@ static void prv_window_unload(Window *window) {
 // App lifecycle
 // ---------------------------------------------------------------------------
 static void prv_init(void) {
-  // Restore saved theme preference
-  if (persist_exists(PERSIST_KEY_INVERTED)) {
-    s_inverted = persist_read_bool(PERSIST_KEY_INVERTED);
+  // Restore persisted settings
+  s_inverted       = persist_exists(PERSIST_THEME)     ? persist_read_bool(PERSIST_THEME)      : true;
+  s_use_fahrenheit = persist_exists(PERSIST_TEMP_UNIT)  ? persist_read_bool(PERSIST_TEMP_UNIT)  : false;
+  s_tz_offset      = persist_exists(PERSIST_TZ_OFFSET)  ? persist_read_int(PERSIST_TZ_OFFSET)   : 60;
+  if (persist_exists(PERSIST_TZ_LABEL)) {
+    persist_read_string(PERSIST_TZ_LABEL, s_tz_label_buf, sizeof(s_tz_label_buf));
+  } else {
+    strncpy(s_tz_label_buf, "DUBLIN", sizeof(s_tz_label_buf));
   }
 
   s_window = window_create();
-  window_set_click_config_provider(s_window, click_config_provider);
   window_set_window_handlers(s_window, (WindowHandlers){
     .load   = prv_window_load,
     .unload = prv_window_unload,

@@ -4,20 +4,26 @@
   "version": "1.0.0",
   "keywords": ["pebble-app"],
   "private": true,
-  "dependencies": {},
+  "dependencies": {
+    "pebble-clay": "^1.0.4"
+  },
   "pebble": {
     "displayName": "Console",
     "uuid": "22f46065-2fd0-41e1-8f41-19294bef2d1e",
     "sdkVersion": "3",
     "enableMultiJS": true,
     "targetPlatforms": ["emery"],
+    "capabilities": ["configurable"],
     "watchapp": {
       "watchface": true
     },
     "messageKeys": [
       "WEATHER_TEMP",
       "WEATHER_ICON",
-      "DUBLIN_OFFSET"
+      "SETTINGS_TZ_OFFSET",
+      "SETTINGS_TZ_LABEL",
+      "SETTINGS_TEMP_UNIT",
+      "SETTINGS_THEME"
     ],
     "resources": {
       "media": [
@@ -33,7 +39,7 @@
           "name": "SPACE_GROTESK_24",
           "file": "fonts/SpaceGrotesk-SemiBold.ttf",
           "compatibility": "2.7",
-          "characterRegex": "[-0-9°C]"
+          "characterRegex": "[-0-9°CF]"
         },
         {
           "type": "font",
@@ -54,7 +60,7 @@
           "name": "SPACE_MONO_14",
           "file": "fonts/SpaceMono-Regular.ttf",
           "compatibility": "2.7",
-          "characterRegex": "[A-Z]"
+          "characterRegex": "[A-Z ]"
         },
         {
           "type": "font",
