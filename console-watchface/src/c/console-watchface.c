@@ -30,9 +30,9 @@
 
 #define WX_ICON_W   26
 #define WX_ICON_H   26
-#define WX_TEMP_W   50
+#define WX_TEMP_W   60
 #define WX_GAP      6
-#define WX_ICON_X   (SAFE_R - WX_TEMP_W - WX_GAP - WX_ICON_W + 16)
+#define WX_ICON_X   (SAFE_R - WX_TEMP_W - WX_GAP - WX_ICON_W + 8)
 #define WX_ICON_Y   (SAFE_T + 4)
 #define WX_TEMP_X   (WX_ICON_X + WX_ICON_W + WX_GAP)
 #define WX_TEMP_Y   20
