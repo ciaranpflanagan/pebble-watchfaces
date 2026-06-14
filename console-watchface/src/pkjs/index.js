@@ -4,12 +4,23 @@ var Clay  = require('pebble-clay');
 var clay  = new Clay(require('./config.js'), null, { autoHandleEvents: false });
 
 // ---------------------------------------------------------------------------
-// Config page — Clay's own build served via unpkg (no hosting required).
-// If this URL ever stops working, host the file at:
-//   node_modules/pebble-clay/build/index.html
-// on any static host (GitHub Pages etc.) and update the URI below.
+// Config page.
+// Clay 1.0.4 always generates a clay.pebble.com S3 base URL and ignores any
+// URI passed to generateUrl(). In the emulator, Chrome then blocks the save
+// redirect (public page → localhost) under Private Network Access rules.
+//
+// Fix: let Clay generate its URL, strip the S3 base, and prepend a local
+// server instead. Both the page origin and return_to become localhost, which
+// Chrome permits (local → local is fine).
+//
+// Before opening the config, start a local server in a separate terminal:
+//   python3 -m http.server 8888 --directory node_modules/pebble-clay/build
+//
+// For a real phone / Rebble store: host node_modules/pebble-clay/build/ on
+// a public URL (e.g. GitHub Pages) and set PROD_CLAY_URI below.
 // ---------------------------------------------------------------------------
-var CLAY_URI = 'https://unpkg.com/pebble-clay@1.0.4/build/index.html';
+var LOCAL_CLAY_URI = 'http://localhost:8888/clay-proxy.html';
+var PROD_CLAY_URI  = '';   // fill in before publishing to the Rebble store
 
 // ---------------------------------------------------------------------------
 // Default location (used when geolocation fails / in the emulator).
@@ -203,18 +214,31 @@ Pebble.addEventListener('ready', function() {
 });
 
 Pebble.addEventListener('showConfiguration', function() {
-  Pebble.openURL(clay.generateUrl(CLAY_URI));
+  // clay.generateUrl() returns 'http://S3/#encodedHtml' with $$$RETURN_TO$$$
+  // as a placeholder in the HTML. The Pebble tool then inserts
+  // ?return_to=http://localhost:PORT/close? before the hash when it opens
+  // the URL. The S3 page substitutes that placeholder and renders the HTML —
+  // but Chrome blocks the save redirect because S3 is public → localhost.
+  //
+  // We swap the S3 base for our local proxy page (clay-proxy.html), which
+  // does the same substitution. Both page origin and return_to are then
+  // localhost, so Chrome allows the navigation.
+  var generated = clay.generateUrl();
+  var fragment  = generated.substring(generated.indexOf('#')); // '#encodedHtml'
+  Pebble.openURL(LOCAL_CLAY_URI + fragment);
 });
 
 Pebble.addEventListener('webviewclosed', function(e) {
   if (!e.response || e.response === 'CANCELLED') return;
 
   try {
-    var claySettings = clay.getSettings(e.response);
+    // Pass false so getSettings returns raw string-keyed objects with .value
+    // properties, instead of the numeric-keyed AppMessage-ready format.
+    var claySettings = clay.getSettings(e.response, false);
     var settings = {
-      tzKey:    claySettings.SETTINGS_TZ_KEY    || 'DUB',
-      tempUnit: claySettings.SETTINGS_TEMP_UNIT || 'C',
-      theme:    !!claySettings.SETTINGS_THEME
+      tzKey:    (claySettings.SETTINGS_TZ_KEY    && claySettings.SETTINGS_TZ_KEY.value)    || 'DUB',
+      tempUnit: (claySettings.SETTINGS_TEMP_UNIT && claySettings.SETTINGS_TEMP_UNIT.value) || 'C',
+      theme:    !!(claySettings.SETTINGS_THEME   && claySettings.SETTINGS_THEME.value)
     };
     saveSettings(settings);
     sendSettingsToWatch(settings);
