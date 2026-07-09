@@ -20,7 +20,12 @@ var clay  = new Clay(require('./config.js'), null, { autoHandleEvents: false });
 // a public URL (e.g. GitHub Pages) and set PROD_CLAY_URI below.
 // ---------------------------------------------------------------------------
 var LOCAL_CLAY_URI = 'http://localhost:8888/clay-proxy.html';
-var PROD_CLAY_URI  = '';   // fill in before publishing to the Rebble store
+
+// Set to false before publishing to the Rebble store.
+// On a real phone the Pebble app's WebView handles pebblejs:// natively so
+// the S3 URL Clay generates works fine. The proxy is only needed in the
+// emulator where Chrome blocks public-page → localhost redirects (PNA).
+var IS_EMULATOR = true;
 
 // ---------------------------------------------------------------------------
 // Default location (used when geolocation fails / in the emulator).
@@ -214,18 +219,13 @@ Pebble.addEventListener('ready', function() {
 });
 
 Pebble.addEventListener('showConfiguration', function() {
-  // clay.generateUrl() returns 'http://S3/#encodedHtml' with $$$RETURN_TO$$$
-  // as a placeholder in the HTML. The Pebble tool then inserts
-  // ?return_to=http://localhost:PORT/close? before the hash when it opens
-  // the URL. The S3 page substitutes that placeholder and renders the HTML —
-  // but Chrome blocks the save redirect because S3 is public → localhost.
-  //
-  // We swap the S3 base for our local proxy page (clay-proxy.html), which
-  // does the same substitution. Both page origin and return_to are then
-  // localhost, so Chrome allows the navigation.
   var generated = clay.generateUrl();
-  var fragment  = generated.substring(generated.indexOf('#')); // '#encodedHtml'
-  Pebble.openURL(LOCAL_CLAY_URI + fragment);
+  if (IS_EMULATOR) {
+    var fragment = generated.substring(generated.indexOf('#'));
+    Pebble.openURL(LOCAL_CLAY_URI + fragment);
+  } else {
+    Pebble.openURL(generated);
+  }
 });
 
 Pebble.addEventListener('webviewclosed', function(e) {

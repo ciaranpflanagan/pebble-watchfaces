@@ -8,7 +8,7 @@
     "pebble-clay": "^1.0.4"
   },
   "pebble": {
-    "displayName": "Console",
+    "displayName": "Homezone",
     "uuid": "22f46065-2fd0-41e1-8f41-19294bef2d1e",
     "sdkVersion": "3",
     "enableMultiJS": true,
@@ -27,6 +27,12 @@
     ],
     "resources": {
       "media": [
+        {
+          "menuIcon": true,
+          "type": "png",
+          "name": "IMAGE_MENU_ICON",
+          "file": "images/menu_icon.png"
+        },
         {
           "type": "font",
           "name": "SPACE_GROTESK_72",
