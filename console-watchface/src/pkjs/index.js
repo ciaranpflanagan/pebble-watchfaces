@@ -1,7 +1,8 @@
 'use strict';
 
-var Clay  = require('pebble-clay');
-var clay  = new Clay(require('./config.js'), null, { autoHandleEvents: false });
+var Clay      = require('pebble-clay');
+var timezones = require('./timezones.js');
+var clay      = new Clay(require('./config.js'), null, { autoHandleEvents: false });
 
 // ---------------------------------------------------------------------------
 // Config page.
@@ -13,11 +14,14 @@ var clay  = new Clay(require('./config.js'), null, { autoHandleEvents: false });
 // server instead. Both the page origin and return_to become localhost, which
 // Chrome permits (local → local is fine).
 //
-// Before opening the config, start a local server in a separate terminal:
-//   python3 -m http.server 8888 --directory node_modules/pebble-clay/build
+// Before running `pebble emu-app-config`, serve the project root in a separate
+// terminal so clay-proxy.html is reachable:
+//   python3 -m http.server 8888 --directory .
 //
-// For a real phone / Rebble store: host node_modules/pebble-clay/build/ on
-// a public URL (e.g. GitHub Pages) and set PROD_CLAY_URI below.
+// clay-proxy.html rebuilds the config page from the URL hash and needs no other
+// files served alongside it.
+//
+// On a real phone this proxy is unused entirely — see IS_EMULATOR below.
 // ---------------------------------------------------------------------------
 var LOCAL_CLAY_URI = 'http://localhost:8888/clay-proxy.html';
 
@@ -37,112 +41,57 @@ var DEFAULT_LON = -122.3321;
 var REFRESH_MS = 30 * 60 * 1000;
 
 // ---------------------------------------------------------------------------
-// Timezone lookup table + DST rules
-// std/dst are UTC offsets in minutes.
-// ---------------------------------------------------------------------------
-var TIMEZONES = {
-  DUB: { label: 'DUBLIN',  std:    0, dst:  60, rule: 'EU' },
-  NYC: { label: 'NEW YK',  std: -300, dst: -240, rule: 'US' },
-  LAX: { label: 'LA',      std: -480, dst: -420, rule: 'US' },
-  CHI: { label: 'CHICAGO', std: -360, dst: -300, rule: 'US' },
-  UTC: { label: 'UTC',     std:    0, dst:   0,  rule: 'NONE' },
-  PAR: { label: 'PARIS',   std:   60, dst: 120,  rule: 'EU' },
-  TYO: { label: 'TOKYO',   std:  540, dst: 540,  rule: 'NONE' },
-  SYD: { label: 'SYDNEY',  std:  600, dst: 660,  rule: 'AU' },
-  DXB: { label: 'DUBAI',   std:  240, dst: 240,  rule: 'NONE' },
-  HKG: { label: 'HK',      std:  480, dst: 480,  rule: 'NONE' }
-};
-
-function lastSundayUtc(year, month0, hour) {
-  var d = new Date(Date.UTC(year, month0 + 1, 0));   // last day of month
-  d.setUTCDate(d.getUTCDate() - d.getUTCDay());       // rewind to Sunday
-  d.setUTCHours(hour, 0, 0, 0);
-  return d;
-}
-
-function nthSundayUtc(year, month0, n) {
-  var d = new Date(Date.UTC(year, month0, 1));
-  d.setUTCDate(1 + ((7 - d.getUTCDay()) % 7) + (n - 1) * 7);
-  return d;
-}
-
-function isEuDst(now) {
-  var y = now.getUTCFullYear();
-  var start = lastSundayUtc(y, 2, 1);    // last Sun Mar @ 01:00 UTC
-  var end   = lastSundayUtc(y, 9, 1);    // last Sun Oct @ 01:00 UTC
-  return now >= start && now < end;
-}
-
-function isUsDst(now) {
-  var y = now.getUTCFullYear();
-  var m = now.getUTCMonth();
-  if (m < 2 || m > 10) return false;
-  if (m > 2  && m < 10) return true;
-  if (m === 2) {
-    var start = nthSundayUtc(y, 2, 2);   // 2nd Sun Mar
-    start.setUTCHours(7);                 // 02:00 EST ≈ 07:00 UTC
-    return now >= start;
-  }
-  // m === 10 (November)
-  var end = nthSundayUtc(y, 10, 1);      // 1st Sun Nov
-  end.setUTCHours(6);
-  return now < end;
-}
-
-function isAuDst(now) {
-  // Sydney: DST Oct→Apr (southern summer)
-  var y = now.getUTCFullYear();
-  var m = now.getUTCMonth();
-  if (m > 3 && m < 9) return false;     // May–Sep: standard
-  if (m === 3) {                          // April: ends 1st Sun Apr
-    return now < nthSundayUtc(y, 3, 1);
-  }
-  if (m === 9) {                          // October: starts 1st Sun Oct
-    return now >= nthSundayUtc(y, 9, 1);
-  }
-  return true;                            // Nov, Dec, Jan, Feb, Mar
-}
-
-function getTzOffset(key) {
-  var tz  = TIMEZONES[key] || TIMEZONES.DUB;
-  var now = new Date();
-  var dst = false;
-  if      (tz.rule === 'EU') dst = isEuDst(now);
-  else if (tz.rule === 'US') dst = isUsDst(now);
-  else if (tz.rule === 'AU') dst = isAuDst(now);
-  return dst ? tz.dst : tz.std;
-}
-
-// ---------------------------------------------------------------------------
 // Settings — saved in localStorage, applied on ready + after config save
 // ---------------------------------------------------------------------------
+var SETTINGS_STORAGE_KEY = 'consoleSettings';
+
 var DEFAULT_SETTINGS = {
-  tzKey:    'DUB',
+  zone:     timezones.DEFAULT_ZONE,
+  tzLabel:  '',                        // blank means "use the zone's own label"
   tempUnit: 'C',
   theme:    false
 };
 
+/**
+ * Bring a settings object read from storage up to the current shape. Older
+ * builds stored a three-letter `tzKey` and had no custom label.
+ */
+function migrateSettings(stored) {
+  if (!stored) return DEFAULT_SETTINGS;
+
+  return {
+    zone:     timezones.resolveZone(stored.zone || stored.tzKey),
+    tzLabel:  timezones.normaliseLabel(stored.tzLabel),
+    tempUnit: stored.tempUnit === 'F' ? 'F' : 'C',
+    theme:    !!stored.theme
+  };
+}
+
 function loadSettings() {
   try {
-    return JSON.parse(localStorage.getItem('consoleSettings')) || DEFAULT_SETTINGS;
+    return migrateSettings(JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY)));
   } catch (e) {
+    console.log('Could not read stored settings (' + e + '), using defaults');
     return DEFAULT_SETTINGS;
   }
 }
 
-function saveSettings(s) {
-  localStorage.setItem('consoleSettings', JSON.stringify(s));
+function saveSettings(settings) {
+  try {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+  } catch (e) {
+    console.log('Could not persist settings: ' + e);
+  }
 }
 
-function sendSettingsToWatch(s) {
-  var tz = TIMEZONES[s.tzKey] || TIMEZONES.DUB;
+function sendSettingsToWatch(settings) {
   Pebble.sendAppMessage({
-    SETTINGS_TZ_OFFSET: getTzOffset(s.tzKey),
-    SETTINGS_TZ_LABEL:  tz.label,
-    SETTINGS_TEMP_UNIT: s.tempUnit === 'F' ? 1 : 0,
-    SETTINGS_THEME:     s.theme ? 1 : 0
+    SETTINGS_TZ_OFFSET: timezones.getOffsetMinutes(settings.zone),
+    SETTINGS_TZ_LABEL:  timezones.resolveLabel(settings.zone, settings.tzLabel),
+    SETTINGS_TEMP_UNIT: settings.tempUnit === 'F' ? 1 : 0,
+    SETTINGS_THEME:     settings.theme ? 1 : 0
   }, function() {
-    console.log('Settings sent: ' + JSON.stringify(s));
+    console.log('Settings sent: ' + JSON.stringify(settings));
   }, function(e) {
     console.log('Settings send failed: ' + JSON.stringify(e));
   });
@@ -215,7 +164,15 @@ Pebble.addEventListener('ready', function() {
   var settings = loadSettings();
   sendSettingsToWatch(settings);
   refresh(settings);
-  setInterval(function() { refresh(loadSettings()); }, REFRESH_MS);
+
+  // The watch stores a fixed UTC offset, so it cannot notice a DST changeover
+  // on its own. Re-sending the settings on every refresh keeps the second
+  // timezone correct within REFRESH_MS of the changeover.
+  setInterval(function() {
+    var current = loadSettings();
+    sendSettingsToWatch(current);
+    refresh(current);
+  }, REFRESH_MS);
 });
 
 Pebble.addEventListener('showConfiguration', function() {
@@ -236,9 +193,12 @@ Pebble.addEventListener('webviewclosed', function(e) {
     // properties, instead of the numeric-keyed AppMessage-ready format.
     var claySettings = clay.getSettings(e.response, false);
     var settings = {
-      tzKey:    (claySettings.SETTINGS_TZ_KEY    && claySettings.SETTINGS_TZ_KEY.value)    || 'DUB',
+      zone:     timezones.resolveZone(
+                  claySettings.SETTINGS_TZ_KEY && claySettings.SETTINGS_TZ_KEY.value),
+      tzLabel:  timezones.normaliseLabel(
+                  claySettings.SETTINGS_TZ_LABEL && claySettings.SETTINGS_TZ_LABEL.value),
       tempUnit: (claySettings.SETTINGS_TEMP_UNIT && claySettings.SETTINGS_TEMP_UNIT.value) || 'C',
-      theme:    !!(claySettings.SETTINGS_THEME   && claySettings.SETTINGS_THEME.value)
+      theme:    !!(claySettings.SETTINGS_THEME && claySettings.SETTINGS_THEME.value)
     };
     saveSettings(settings);
     sendSettingsToWatch(settings);

@@ -4,6 +4,9 @@
   "version": "1.0.0",
   "keywords": ["pebble-app"],
   "private": true,
+  "scripts": {
+    "test": "node --test test/timezones.test.js"
+  },
   "dependencies": {
     "pebble-clay": "^1.0.4"
   },
@@ -66,7 +69,7 @@
           "name": "SPACE_MONO_14",
           "file": "fonts/SpaceMono-Regular.ttf",
           "compatibility": "2.7",
-          "characterRegex": "[A-Z ]"
+          "characterRegex": "[A-Z0-9 '&./+-]"
         },
         {
           "type": "font",

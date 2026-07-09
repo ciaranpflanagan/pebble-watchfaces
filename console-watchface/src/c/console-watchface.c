@@ -49,6 +49,9 @@
 #define FOOTER_LABEL_X   (SAFE_L + (DOT_R*2+1) + 7)
 #define FOOTER_LABEL_Y   194
 #define FOOTER_LABEL_H   16
+// Ten characters of SPACE_MONO_14 (~8.4 px advance each). The timezone label
+// is capped to that width in MAX_LABEL_CHARS in src/pkjs/timezones.js.
+#define FOOTER_LABEL_W   84
 #define FOOTER_TIME_X    100
 #define FOOTER_TIME_Y    190
 #define FOOTER_TIME_W    (SAFE_R - FOOTER_TIME_X)
@@ -367,7 +370,7 @@ static void prv_window_load(Window *window) {
   layer_add_child(root, s_chrome_layer);
 
   s_tz_label_layer = text_layer_create(
-    GRect(FOOTER_LABEL_X, FOOTER_LABEL_Y, 80, FOOTER_LABEL_H));
+    GRect(FOOTER_LABEL_X, FOOTER_LABEL_Y, FOOTER_LABEL_W, FOOTER_LABEL_H));
   text_layer_set_font(s_tz_label_layer, s_font_mono_14);
   text_layer_set_background_color(s_tz_label_layer, GColorClear);
   text_layer_set_text(s_tz_label_layer, s_tz_label_buf);
