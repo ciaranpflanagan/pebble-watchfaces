@@ -15,10 +15,11 @@
 // ---------------------------------------------------------------------------
 // Persistent storage keys
 // ---------------------------------------------------------------------------
-#define PERSIST_THEME      0
-#define PERSIST_TEMP_UNIT  1
-#define PERSIST_TZ_OFFSET  2
-#define PERSIST_TZ_LABEL   3
+#define PERSIST_THEME         0
+#define PERSIST_TEMP_UNIT     1
+#define PERSIST_TZ_OFFSET     2
+#define PERSIST_TZ_LABEL      3
+#define PERSIST_COMPLICATION  4
 
 // ---------------------------------------------------------------------------
 // Layout
@@ -49,13 +50,13 @@
 #define FOOTER_LABEL_X   (SAFE_L + (DOT_R*2+1) + 7)
 #define FOOTER_LABEL_Y   194
 #define FOOTER_LABEL_H   16
-// Ten characters of SPACE_MONO_14 (~8.4 px advance each). The timezone label
-// is capped to that width in MAX_LABEL_CHARS in src/pkjs/timezones.js.
+// Ten characters of SPACE_MONO_14 (~8.4 px advance each). Footer labels are
+// capped to that width by MAX_LABEL_CHARS in src/pkjs/timezones.js.
 #define FOOTER_LABEL_W   84
-#define FOOTER_TIME_X    100
-#define FOOTER_TIME_Y    190
-#define FOOTER_TIME_W    (SAFE_R - FOOTER_TIME_X)
-#define FOOTER_TIME_H    24
+#define FOOTER_VALUE_X   100
+#define FOOTER_VALUE_Y   190
+#define FOOTER_VALUE_W   (SAFE_R - FOOTER_VALUE_X)
+#define FOOTER_VALUE_H   24
 
 // ---------------------------------------------------------------------------
 // Weather icon enum — matches ICON_* in src/pkjs/index.js
@@ -71,6 +72,29 @@ typedef enum {
 } WeatherIconType;
 
 // ---------------------------------------------------------------------------
+// Bottom-row complication — matches COMPLICATIONS in src/pkjs/complications.js
+// ---------------------------------------------------------------------------
+typedef enum {
+  COMP_TIMEZONE  = 0,
+  COMP_STEPS     = 1,
+  COMP_BATTERY   = 2,
+  COMP_HEART     = 3,
+  COMP_CALORIES  = 4,
+  COMP_COUNT
+} ComplicationType;
+
+// Fallback labels, used only when the phone has never sent one (first run on a
+// watch that has not paired yet). Normally the label arrives over AppMessage,
+// already normalised and capitalised by src/pkjs/timezones.js.
+static const char * const COMPLICATION_LABELS[COMP_COUNT] = {
+  "DUBLIN", "STEPS", "BATTERY", "HEART", "CALS"
+};
+
+// Shown whenever a complication has no reading to give: health tracking off,
+// no heart-rate sample yet, or a metric this watch does not support.
+#define VALUE_UNAVAILABLE "--"
+
+// ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 static Window    *s_window;
@@ -80,8 +104,8 @@ static Layer     *s_weather_icon_layer;
 static TextLayer *s_weather_temp_layer;
 static Layer     *s_time_layer;
 static Layer     *s_chrome_layer;
-static TextLayer *s_tz_label_layer;
-static TextLayer *s_tz_time_layer;
+static TextLayer *s_footer_label_layer;
+static TextLayer *s_footer_value_layer;
 
 static GFont s_font_grotesk_72;
 static GFont s_font_grotesk_24;
@@ -90,18 +114,29 @@ static GFont s_font_mono_18;
 static GFont s_font_mono_14;
 static GFont s_font_mono_13;
 
-static WeatherIconType s_weather_icon   = ICON_UNKNOWN;
-static int             s_tz_offset      = 60;       // UTC offset for second zone (mins)
-static bool            s_inverted       = true;     // light/dark theme
-static bool            s_use_fahrenheit = false;
+static WeatherIconType  s_weather_icon   = ICON_UNKNOWN;
+static int              s_tz_offset      = 60;      // UTC offset for second zone (mins)
+static bool             s_inverted       = true;    // light/dark theme
+static bool             s_use_fahrenheit = false;
+static ComplicationType s_complication   = COMP_TIMEZONE;
+
+// Battery level is pushed to us by the subscription rather than polled on the
+// minute tick, so it is cached here between updates.
+static uint8_t s_battery_percent = 0;
+
+// Service subscriptions are held only while the visible complication needs
+// them, so a watchface showing the second timezone is not woken by step or
+// battery events.
+static bool s_battery_subscribed = false;
+static bool s_health_subscribed  = false;
 
 static char s_weekday_buf[6];
 static char s_date_buf[12];
 static char s_weather_temp_buf[16];
 static char s_hours_buf[3];
 static char s_minutes_buf[3];
-static char s_tz_time_buf[6];
-static char s_tz_label_buf[16];
+static char s_footer_value_buf[12];
+static char s_footer_label_buf[16];
 
 // ---------------------------------------------------------------------------
 // Theme helpers
@@ -121,8 +156,8 @@ static void apply_theme(void) {
   text_layer_set_text_color(s_weekday_layer,     muted_color());
   text_layer_set_text_color(s_date_layer,         fg_color());
   text_layer_set_text_color(s_weather_temp_layer, fg_color());
-  text_layer_set_text_color(s_tz_label_layer,     muted_color());
-  text_layer_set_text_color(s_tz_time_layer,      fg_color());
+  text_layer_set_text_color(s_footer_label_layer, muted_color());
+  text_layer_set_text_color(s_footer_value_layer, fg_color());
   layer_mark_dirty(s_weather_icon_layer);
   layer_mark_dirty(s_time_layer);
   layer_mark_dirty(s_chrome_layer);
@@ -247,13 +282,170 @@ static void chrome_update_proc(Layer *layer, GContext *ctx) {
 }
 
 // ---------------------------------------------------------------------------
+// Complications
+// ---------------------------------------------------------------------------
+
+/**
+ * Today's total for a health metric, or -1 when it cannot be read — health
+ * tracking switched off, or a metric this watch does not collect.
+ */
+static int32_t health_today_total(HealthMetric metric) {
+#if defined(PBL_HEALTH)
+  time_t start = time_start_of_today();
+  time_t end   = time(NULL);
+  if (health_service_metric_accessible(metric, start, end)
+        & HealthServiceAccessibilityMaskAvailable) {
+    return (int32_t)health_service_sum_today(metric);
+  }
+#else
+  (void)metric;
+#endif
+  return -1;
+}
+
+/** The most recent heart-rate sample in BPM, or -1 when there isn't one. */
+static int32_t health_current_heart_rate(void) {
+#if defined(PBL_HEALTH)
+  time_t now = time(NULL);
+  if (health_service_metric_accessible(HealthMetricHeartRateBPM, now, now)
+        & HealthServiceAccessibilityMaskAvailable) {
+    HealthValue bpm = health_service_peek_current_value(HealthMetricHeartRateBPM);
+    if (bpm > 0) return (int32_t)bpm;
+  }
+#endif
+  return -1;
+}
+
+static void format_count(int32_t value, char *buf, size_t size) {
+  if (value < 0) {
+    snprintf(buf, size, "%s", VALUE_UNAVAILABLE);
+  } else {
+    snprintf(buf, size, "%d", (int)value);
+  }
+}
+
+/**
+ * Step counts are grouped for legibility, and compacted once they run past
+ * four figures: FOOTER_VALUE_W only has room for about five glyphs of
+ * SPACE_GROTESK_22, so 12431 has to render as "12.4K" rather than "12,431".
+ */
+static void format_steps(int32_t steps, char *buf, size_t size) {
+  if (steps < 0) {
+    snprintf(buf, size, "%s", VALUE_UNAVAILABLE);
+  } else if (steps < 1000) {
+    snprintf(buf, size, "%d", (int)steps);
+  } else if (steps < 10000) {
+    snprintf(buf, size, "%d,%03d", (int)(steps / 1000), (int)(steps % 1000));
+  } else if (steps < 100000) {
+    snprintf(buf, size, "%d.%dK", (int)(steps / 1000), (int)((steps % 1000) / 100));
+  } else {
+    snprintf(buf, size, "%dK", (int)(steps / 1000));
+  }
+}
+
+/**
+ * Fill the footer from whichever complication is selected. Called from the
+ * minute tick and from every service handler, so it must stay cheap.
+ */
+static void render_footer(void) {
+  if (!s_footer_label_layer || !s_footer_value_layer) return;
+
+  switch (s_complication) {
+    case COMP_TIMEZONE: {
+      time_t tz_utc = time(NULL) + (time_t)(s_tz_offset * 60);
+      struct tm *tz_tm = gmtime(&tz_utc);
+      strftime(s_footer_value_buf, sizeof(s_footer_value_buf), "%H:%M", tz_tm);
+      break;
+    }
+    case COMP_STEPS:
+      format_steps(health_today_total(HealthMetricStepCount),
+                   s_footer_value_buf, sizeof(s_footer_value_buf));
+      break;
+    case COMP_BATTERY:
+      // Pebble reports the charge in ten-percent steps, so this reads 90, 80,
+      // 70 — never 87.
+      snprintf(s_footer_value_buf, sizeof(s_footer_value_buf),
+               "%d%%", (int)s_battery_percent);
+      break;
+    case COMP_HEART:
+      format_count(health_current_heart_rate(),
+                   s_footer_value_buf, sizeof(s_footer_value_buf));
+      break;
+    case COMP_CALORIES:
+      format_count(health_today_total(HealthMetricActiveKCalories),
+                   s_footer_value_buf, sizeof(s_footer_value_buf));
+      break;
+    default:
+      snprintf(s_footer_value_buf, sizeof(s_footer_value_buf), "%s", VALUE_UNAVAILABLE);
+      break;
+  }
+
+  // The phone normally supplies the label; the built-in one covers the first
+  // run on a watch that has never been paired.
+  text_layer_set_text(s_footer_label_layer,
+    s_footer_label_buf[0] ? s_footer_label_buf : COMPLICATION_LABELS[s_complication]);
+  text_layer_set_text(s_footer_value_layer, s_footer_value_buf);
+}
+
+static void battery_handler(BatteryChargeState state) {
+  s_battery_percent = state.charge_percent;
+  render_footer();
+}
+
+#if defined(PBL_HEALTH)
+static void health_handler(HealthEventType event, void *context) {
+  switch (event) {
+    case HealthEventSignificantUpdate:
+    case HealthEventMovementUpdate:
+    case HealthEventHeartRateUpdate:
+      render_footer();
+      break;
+    default:
+      break;
+  }
+}
+#endif
+
+/**
+ * Hold a service subscription only while the visible complication needs it, so
+ * a watchface showing the second timezone is never woken by step or battery
+ * events.
+ */
+static void update_service_subscriptions(void) {
+  bool want_battery = (s_complication == COMP_BATTERY);
+  bool want_health  = (s_complication == COMP_STEPS ||
+                       s_complication == COMP_HEART ||
+                       s_complication == COMP_CALORIES);
+
+  if (want_battery && !s_battery_subscribed) {
+    battery_state_service_subscribe(battery_handler);
+    s_battery_percent    = battery_state_service_peek().charge_percent;
+    s_battery_subscribed = true;
+  } else if (!want_battery && s_battery_subscribed) {
+    battery_state_service_unsubscribe();
+    s_battery_subscribed = false;
+  }
+
+#if defined(PBL_HEALTH)
+  if (want_health && !s_health_subscribed) {
+    s_health_subscribed = health_service_events_subscribe(health_handler, NULL);
+  } else if (!want_health && s_health_subscribed) {
+    health_service_events_unsubscribe();
+    s_health_subscribed = false;
+  }
+#else
+  (void)want_health;
+#endif
+}
+
+// ---------------------------------------------------------------------------
 // Display update
 // ---------------------------------------------------------------------------
 static void str_upper(char *s) {
   for (; *s; s++) { *s = (char)toupper((unsigned char)*s); }
 }
 
-static void update_display(struct tm *local_tm, time_t utc) {
+static void update_display(struct tm *local_tm) {
   strftime(s_weekday_buf, sizeof(s_weekday_buf), "%a", local_tm);
   str_upper(s_weekday_buf);
   text_layer_set_text(s_weekday_layer, s_weekday_buf);
@@ -266,14 +458,11 @@ static void update_display(struct tm *local_tm, time_t utc) {
   strftime(s_minutes_buf, sizeof(s_minutes_buf), "%M", local_tm);
   layer_mark_dirty(s_time_layer);
 
-  time_t tz_utc = utc + (time_t)(s_tz_offset * 60);
-  struct tm *tz_tm = gmtime(&tz_utc);
-  strftime(s_tz_time_buf, sizeof(s_tz_time_buf), "%H:%M", tz_tm);
-  text_layer_set_text(s_tz_time_layer, s_tz_time_buf);
+  render_footer();
 }
 
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
-  update_display(tick_time, time(NULL));
+  update_display(tick_time);
 }
 
 // ---------------------------------------------------------------------------
@@ -282,6 +471,7 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
 static void prv_inbox_received(DictionaryIterator *iter, void *context) {
   Tuple *temp_t   = dict_find(iter, MESSAGE_KEY_WEATHER_TEMP);
   Tuple *icon_t   = dict_find(iter, MESSAGE_KEY_WEATHER_ICON);
+  Tuple *comp_t   = dict_find(iter, MESSAGE_KEY_SETTINGS_COMPLICATION);
   Tuple *offset_t = dict_find(iter, MESSAGE_KEY_SETTINGS_TZ_OFFSET);
   Tuple *label_t  = dict_find(iter, MESSAGE_KEY_SETTINGS_TZ_LABEL);
   Tuple *unit_t   = dict_find(iter, MESSAGE_KEY_SETTINGS_TEMP_UNIT);
@@ -297,17 +487,23 @@ static void prv_inbox_received(DictionaryIterator *iter, void *context) {
     s_weather_icon = (WeatherIconType)icon_t->value->int32;
     layer_mark_dirty(s_weather_icon_layer);
   }
+  if (comp_t) {
+    int comp = (int)comp_t->value->int32;
+    if (comp >= 0 && comp < COMP_COUNT) {
+      s_complication = (ComplicationType)comp;
+      persist_write_int(PERSIST_COMPLICATION, s_complication);
+    } else {
+      APP_LOG(APP_LOG_LEVEL_WARNING, "Unknown complication: %d", comp);
+    }
+  }
   if (offset_t) {
     s_tz_offset = (int)offset_t->value->int32;
     persist_write_int(PERSIST_TZ_OFFSET, s_tz_offset);
-    time_t utc = time(NULL);
-    update_display(localtime(&utc), utc);
   }
   if (label_t) {
-    strncpy(s_tz_label_buf, label_t->value->cstring, sizeof(s_tz_label_buf) - 1);
-    s_tz_label_buf[sizeof(s_tz_label_buf) - 1] = '\0';
-    persist_write_string(PERSIST_TZ_LABEL, s_tz_label_buf);
-    text_layer_set_text(s_tz_label_layer, s_tz_label_buf);
+    strncpy(s_footer_label_buf, label_t->value->cstring, sizeof(s_footer_label_buf) - 1);
+    s_footer_label_buf[sizeof(s_footer_label_buf) - 1] = '\0';
+    persist_write_string(PERSIST_TZ_LABEL, s_footer_label_buf);
   }
   if (unit_t) {
     s_use_fahrenheit = (bool)unit_t->value->int32;
@@ -319,6 +515,12 @@ static void prv_inbox_received(DictionaryIterator *iter, void *context) {
     persist_write_bool(PERSIST_THEME, s_inverted);
     apply_theme();
   }
+
+  // Complication, offset and label all feed the footer. Settle the
+  // subscriptions — which is also where a newly selected battery complication
+  // takes its first reading — then redraw once, rather than after each tuple.
+  update_service_subscriptions();
+  render_footer();
 }
 
 static void prv_inbox_dropped(AppMessageResult reason, void *context) {
@@ -369,23 +571,22 @@ static void prv_window_load(Window *window) {
   layer_set_update_proc(s_chrome_layer, chrome_update_proc);
   layer_add_child(root, s_chrome_layer);
 
-  s_tz_label_layer = text_layer_create(
+  s_footer_label_layer = text_layer_create(
     GRect(FOOTER_LABEL_X, FOOTER_LABEL_Y, FOOTER_LABEL_W, FOOTER_LABEL_H));
-  text_layer_set_font(s_tz_label_layer, s_font_mono_14);
-  text_layer_set_background_color(s_tz_label_layer, GColorClear);
-  text_layer_set_text(s_tz_label_layer, s_tz_label_buf);
-  layer_add_child(root, text_layer_get_layer(s_tz_label_layer));
+  text_layer_set_font(s_footer_label_layer, s_font_mono_14);
+  text_layer_set_background_color(s_footer_label_layer, GColorClear);
+  layer_add_child(root, text_layer_get_layer(s_footer_label_layer));
 
-  s_tz_time_layer = text_layer_create(
-    GRect(FOOTER_TIME_X, FOOTER_TIME_Y, FOOTER_TIME_W, FOOTER_TIME_H));
-  text_layer_set_font(s_tz_time_layer, s_font_grotesk_22);
-  text_layer_set_background_color(s_tz_time_layer, GColorClear);
-  text_layer_set_text_alignment(s_tz_time_layer, GTextAlignmentRight);
-  layer_add_child(root, text_layer_get_layer(s_tz_time_layer));
+  s_footer_value_layer = text_layer_create(
+    GRect(FOOTER_VALUE_X, FOOTER_VALUE_Y, FOOTER_VALUE_W, FOOTER_VALUE_H));
+  text_layer_set_font(s_footer_value_layer, s_font_grotesk_22);
+  text_layer_set_background_color(s_footer_value_layer, GColorClear);
+  text_layer_set_text_alignment(s_footer_value_layer, GTextAlignmentRight);
+  layer_add_child(root, text_layer_get_layer(s_footer_value_layer));
 
   apply_theme();
   time_t utc = time(NULL);
-  update_display(localtime(&utc), utc);
+  update_display(localtime(&utc));
 }
 
 static void prv_window_unload(Window *window) {
@@ -395,8 +596,10 @@ static void prv_window_unload(Window *window) {
   text_layer_destroy(s_weather_temp_layer);
   layer_destroy(s_time_layer);
   layer_destroy(s_chrome_layer);
-  text_layer_destroy(s_tz_label_layer);
-  text_layer_destroy(s_tz_time_layer);
+  text_layer_destroy(s_footer_label_layer);
+  text_layer_destroy(s_footer_value_layer);
+  s_footer_label_layer = NULL;
+  s_footer_value_layer = NULL;
 
   fonts_unload_custom_font(s_font_grotesk_72);
   fonts_unload_custom_font(s_font_grotesk_24);
@@ -415,9 +618,11 @@ static void prv_init(void) {
   s_use_fahrenheit = persist_exists(PERSIST_TEMP_UNIT)  ? persist_read_bool(PERSIST_TEMP_UNIT)  : false;
   s_tz_offset      = persist_exists(PERSIST_TZ_OFFSET)  ? persist_read_int(PERSIST_TZ_OFFSET)   : 60;
   if (persist_exists(PERSIST_TZ_LABEL)) {
-    persist_read_string(PERSIST_TZ_LABEL, s_tz_label_buf, sizeof(s_tz_label_buf));
-  } else {
-    strncpy(s_tz_label_buf, "DUBLIN", sizeof(s_tz_label_buf));
+    persist_read_string(PERSIST_TZ_LABEL, s_footer_label_buf, sizeof(s_footer_label_buf));
+  }
+  if (persist_exists(PERSIST_COMPLICATION)) {
+    int comp = persist_read_int(PERSIST_COMPLICATION);
+    if (comp >= 0 && comp < COMP_COUNT) s_complication = (ComplicationType)comp;
   }
 
   s_window = window_create();
@@ -428,6 +633,12 @@ static void prv_init(void) {
   window_stack_push(s_window, true);
 
   tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
+
+  // The window is already loaded and drawn by now, so pick up the first
+  // battery reading and redraw the footer with it.
+  update_service_subscriptions();
+  render_footer();
+
   app_message_register_inbox_received(prv_inbox_received);
   app_message_register_inbox_dropped(prv_inbox_dropped);
   app_message_open(app_message_inbox_size_maximum(), app_message_outbox_size_maximum());
@@ -435,6 +646,10 @@ static void prv_init(void) {
 
 static void prv_deinit(void) {
   tick_timer_service_unsubscribe();
+  if (s_battery_subscribed) battery_state_service_unsubscribe();
+#if defined(PBL_HEALTH)
+  if (s_health_subscribed) health_service_events_unsubscribe();
+#endif
   window_destroy(s_window);
 }
 
