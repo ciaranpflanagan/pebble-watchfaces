@@ -1,8 +1,10 @@
 'use strict';
 
-var Clay      = require('pebble-clay');
-var timezones = require('./timezones.js');
-var clay      = new Clay(require('./config.js'), null, { autoHandleEvents: false });
+var Clay          = require('pebble-clay');
+var timezones     = require('./timezones.js');
+var complications = require('./complications.js');
+var clayCustomFn  = require('./clay-custom.js');
+var clay          = new Clay(require('./config.js'), clayCustomFn, { autoHandleEvents: false });
 
 // ---------------------------------------------------------------------------
 // Config page.
@@ -46,25 +48,43 @@ var REFRESH_MS = 30 * 60 * 1000;
 var SETTINGS_STORAGE_KEY = 'consoleSettings';
 
 var DEFAULT_SETTINGS = {
-  zone:     timezones.DEFAULT_ZONE,
-  tzLabel:  '',                        // blank means "use the zone's own label"
-  tempUnit: 'C',
-  theme:    false
+  complication: complications.DEFAULT_COMPLICATION,
+  zone:         timezones.DEFAULT_ZONE,
+  tzLabel:      '',                    // blank means "use the built-in label"
+  tempUnit:     'C',
+  theme:        false
 };
 
 /**
  * Bring a settings object read from storage up to the current shape. Older
- * builds stored a three-letter `tzKey` and had no custom label.
+ * builds stored a three-letter `tzKey`, had no custom label, and had no
+ * complication picker — those upgrade to the second timezone, so an existing
+ * install looks unchanged after the update.
  */
 function migrateSettings(stored) {
   if (!stored) return DEFAULT_SETTINGS;
 
   return {
-    zone:     timezones.resolveZone(stored.zone || stored.tzKey),
-    tzLabel:  timezones.normaliseLabel(stored.tzLabel),
-    tempUnit: stored.tempUnit === 'F' ? 'F' : 'C',
-    theme:    !!stored.theme
+    complication: complications.resolveComplication(stored.complication),
+    zone:         timezones.resolveZone(stored.zone || stored.tzKey),
+    tzLabel:      timezones.normaliseLabel(stored.tzLabel),
+    tempUnit:     stored.tempUnit === 'F' ? 'F' : 'C',
+    theme:        !!stored.theme
   };
+}
+
+/**
+ * The label the watch should print on the bottom row. A custom label always
+ * wins; otherwise the second timezone uses its city name and every other
+ * complication its built-in label.
+ */
+function resolveFooterLabel(settings) {
+  var custom = timezones.normaliseLabel(settings.tzLabel);
+  if (custom) return custom;
+
+  return complications.isTimezone(settings.complication)
+    ? timezones.labelForZone(settings.zone)
+    : complications.defaultLabel(settings.complication);
 }
 
 function loadSettings() {
@@ -85,11 +105,15 @@ function saveSettings(settings) {
 }
 
 function sendSettingsToWatch(settings) {
+  // The timezone offset goes over even when the bottom row is showing
+  // something else, so switching back to it is instant rather than waiting on
+  // the next config save.
   Pebble.sendAppMessage({
-    SETTINGS_TZ_OFFSET: timezones.getOffsetMinutes(settings.zone),
-    SETTINGS_TZ_LABEL:  timezones.resolveLabel(settings.zone, settings.tzLabel),
-    SETTINGS_TEMP_UNIT: settings.tempUnit === 'F' ? 1 : 0,
-    SETTINGS_THEME:     settings.theme ? 1 : 0
+    SETTINGS_COMPLICATION: complications.toValue(settings.complication),
+    SETTINGS_TZ_OFFSET:    timezones.getOffsetMinutes(settings.zone),
+    SETTINGS_TZ_LABEL:     resolveFooterLabel(settings),
+    SETTINGS_TEMP_UNIT:    settings.tempUnit === 'F' ? 1 : 0,
+    SETTINGS_THEME:        settings.theme ? 1 : 0
   }, function() {
     console.log('Settings sent: ' + JSON.stringify(settings));
   }, function(e) {
@@ -193,12 +217,15 @@ Pebble.addEventListener('webviewclosed', function(e) {
     // properties, instead of the numeric-keyed AppMessage-ready format.
     var claySettings = clay.getSettings(e.response, false);
     var settings = {
-      zone:     timezones.resolveZone(
-                  claySettings.SETTINGS_TZ_KEY && claySettings.SETTINGS_TZ_KEY.value),
-      tzLabel:  timezones.normaliseLabel(
-                  claySettings.SETTINGS_TZ_LABEL && claySettings.SETTINGS_TZ_LABEL.value),
-      tempUnit: (claySettings.SETTINGS_TEMP_UNIT && claySettings.SETTINGS_TEMP_UNIT.value) || 'C',
-      theme:    !!(claySettings.SETTINGS_THEME && claySettings.SETTINGS_THEME.value)
+      complication: complications.resolveComplication(
+                      claySettings.SETTINGS_COMPLICATION &&
+                      claySettings.SETTINGS_COMPLICATION.value),
+      zone:         timezones.resolveZone(
+                      claySettings.SETTINGS_TZ_KEY && claySettings.SETTINGS_TZ_KEY.value),
+      tzLabel:      timezones.normaliseLabel(
+                      claySettings.SETTINGS_TZ_LABEL && claySettings.SETTINGS_TZ_LABEL.value),
+      tempUnit:     (claySettings.SETTINGS_TEMP_UNIT && claySettings.SETTINGS_TEMP_UNIT.value) || 'C',
+      theme:        !!(claySettings.SETTINGS_THEME && claySettings.SETTINGS_THEME.value)
     };
     saveSettings(settings);
     sendSettingsToWatch(settings);

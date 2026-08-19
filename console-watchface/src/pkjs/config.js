@@ -1,4 +1,5 @@
-var timezones = require('./timezones.js');
+var timezones     = require('./timezones.js');
+var complications = require('./complications.js');
 
 // ---------------------------------------------------------------------------
 // Clay has no column primitive: every component renders as a block-level
@@ -34,6 +35,10 @@ var TWO_COLUMN_STYLE =
   '.section:has([data-tz-col]) > .component-select {' +
   '  flex: 1 1 0;' +
   '  min-width: 0;' +
+  '}' +
+  // The complication picker sits on its own line above that pair.
+  '.section:has([data-tz-col]) > .component-select:has([data-tz-col="full"]) {' +
+  '  flex: 0 0 100%;' +
   '}' +
   '@media (max-width: 420px) {' +
   '  .section:has([data-tz-col]) > .component-input,' +
@@ -88,28 +93,43 @@ module.exports = [
     'items': [
       {
         'type': 'heading',
-        'defaultValue': 'Second Timezone'
+        'defaultValue': 'Bottom Row'
       },
       {
         'type': 'text',
         'defaultValue': TWO_COLUMN_STYLE
       },
-      // Left column: declared before the select so it lands on the left.
+      {
+        'type': 'select',
+        'messageKey': 'SETTINGS_COMPLICATION',
+        'label': 'Show',
+        'defaultValue': complications.DEFAULT_COMPLICATION,
+        'options': complications.configOptions(),
+        'attributes': {
+          'data-tz-col': 'full'
+        },
+        'description': 'Steps, heart rate and calories come from Pebble Health ' +
+                       'and read as -- while health tracking is switched off.'
+      },
+      // Left column: declared before the city select so it lands on the left.
       {
         'type': 'input',
         'messageKey': 'SETTINGS_TZ_LABEL',
         'label': 'Label',
         'defaultValue': '',
         'attributes': {
-          'placeholder': 'City name',
+          'placeholder': 'Leave blank for default',
           'maxlength': timezones.MAX_LABEL_CHARS,
           'data-tz-col': 'left'
         },
         'description': 'Shown on the watch, in capitals. Up to ' +
                        timezones.MAX_LABEL_CHARS +
-                       ' characters. Leave blank to use the city name.'
+                       ' characters. Applies to whatever the bottom row is ' +
+                       'showing. Leave blank for the city name, or STEPS, ' +
+                       'BATTERY, HEART, CALS.'
       },
-      // Right column.
+      // Right column. Hidden unless the bottom row is the second timezone
+      // (see src/pkjs/clay-custom.js).
       {
         'type': 'select',
         'messageKey': 'SETTINGS_TZ_KEY',
