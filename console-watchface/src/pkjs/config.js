@@ -1,5 +1,6 @@
 var timezones     = require('./timezones.js');
 var complications = require('./complications.js');
+var accent        = require('./accent.js');
 
 // ---------------------------------------------------------------------------
 // Clay has no column primitive: every component renders as a block-level
@@ -66,6 +67,14 @@ module.exports = [
         'label': 'Light Theme',
         'defaultValue': false,
         'description': 'Switch between dark and light backgrounds'
+      },
+      {
+        'type': 'color',
+        'messageKey': 'SETTINGS_ACCENT',
+        'label': 'Accent Colour',
+        'defaultValue': accent.toHexString(accent.DEFAULT_ACCENT),
+        'sunlight': true,
+        'description': 'Colours the clock colon and the bottom-row marker.'
       }
     ]
   },

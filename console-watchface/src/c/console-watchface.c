@@ -4,7 +4,10 @@
 // ---------------------------------------------------------------------------
 // Design tokens
 // ---------------------------------------------------------------------------
-#define COLOR_ACCENT  GColorSunsetOrange
+// Default accent, used until the phone sends one. 0xFF5555 is the exact RGB of
+// GColorSunsetOrange, the colour the face shipped with. Keep in step with
+// DEFAULT_ACCENT in src/pkjs/accent.js.
+#define ACCENT_DEFAULT_HEX  0xFF5555
 
 // Screen geometry (emery: 200 × 228)
 #define SAFE_L  16
@@ -20,6 +23,7 @@
 #define PERSIST_TZ_OFFSET     2
 #define PERSIST_TZ_LABEL      3
 #define PERSIST_COMPLICATION  4
+#define PERSIST_ACCENT        5
 
 // ---------------------------------------------------------------------------
 // Layout
@@ -119,6 +123,7 @@ static int              s_tz_offset      = 60;      // UTC offset for second zon
 static bool             s_inverted       = true;    // light/dark theme
 static bool             s_use_fahrenheit = false;
 static ComplicationType s_complication   = COMP_TIMEZONE;
+static GColor           s_accent;                   // set in prv_init
 
 // Battery level is pushed to us by the subscription rather than polled on the
 // minute tick, so it is cached here between updates.
@@ -260,7 +265,7 @@ static void time_layer_update_proc(Layer *layer, GContext *ctx) {
     GRect(x, 0, hh_sz.w + 2, TIME_H), GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
   x += hh_sz.w;
 
-  graphics_context_set_text_color(ctx, COLOR_ACCENT);
+  graphics_context_set_text_color(ctx, s_accent);
   graphics_draw_text(ctx, ":", s_font_grotesk_72,
     GRect(x, 0, colon_sz.w + 2, TIME_H), GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
   x += colon_sz.w;
@@ -277,7 +282,7 @@ static void chrome_update_proc(Layer *layer, GContext *ctx) {
   graphics_context_set_stroke_color(ctx, hairline_color());
   graphics_context_set_stroke_width(ctx, 1);
   graphics_draw_line(ctx, GPoint(SAFE_L, 0), GPoint(SAFE_R, 0));
-  graphics_context_set_fill_color(ctx, COLOR_ACCENT);
+  graphics_context_set_fill_color(ctx, s_accent);
   graphics_fill_circle(ctx, GPoint(DOT_X, DOT_Y_LOCAL), DOT_R);
 }
 
@@ -476,6 +481,7 @@ static void prv_inbox_received(DictionaryIterator *iter, void *context) {
   Tuple *label_t  = dict_find(iter, MESSAGE_KEY_SETTINGS_TZ_LABEL);
   Tuple *unit_t   = dict_find(iter, MESSAGE_KEY_SETTINGS_TEMP_UNIT);
   Tuple *theme_t  = dict_find(iter, MESSAGE_KEY_SETTINGS_THEME);
+  Tuple *accent_t = dict_find(iter, MESSAGE_KEY_SETTINGS_ACCENT);
 
   if (temp_t) {
     snprintf(s_weather_temp_buf, sizeof(s_weather_temp_buf),
@@ -514,6 +520,14 @@ static void prv_inbox_received(DictionaryIterator *iter, void *context) {
     s_inverted = (bool)theme_t->value->int32;
     persist_write_bool(PERSIST_THEME, s_inverted);
     apply_theme();
+  }
+  if (accent_t) {
+    int hex = (int)accent_t->value->int32;
+    s_accent = GColorFromHEX(hex);
+    persist_write_int(PERSIST_ACCENT, hex);
+    // The accent is drawn by the time and chrome layers, not a text layer.
+    layer_mark_dirty(s_time_layer);
+    layer_mark_dirty(s_chrome_layer);
   }
 
   // Complication, offset and label all feed the footer. Settle the
@@ -617,6 +631,8 @@ static void prv_init(void) {
   s_inverted       = persist_exists(PERSIST_THEME)     ? persist_read_bool(PERSIST_THEME)      : true;
   s_use_fahrenheit = persist_exists(PERSIST_TEMP_UNIT)  ? persist_read_bool(PERSIST_TEMP_UNIT)  : false;
   s_tz_offset      = persist_exists(PERSIST_TZ_OFFSET)  ? persist_read_int(PERSIST_TZ_OFFSET)   : 60;
+  s_accent         = GColorFromHEX(persist_exists(PERSIST_ACCENT)
+                                     ? persist_read_int(PERSIST_ACCENT) : ACCENT_DEFAULT_HEX);
   if (persist_exists(PERSIST_TZ_LABEL)) {
     persist_read_string(PERSIST_TZ_LABEL, s_footer_label_buf, sizeof(s_footer_label_buf));
   }

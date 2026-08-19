@@ -27,7 +27,8 @@
       "SETTINGS_TZ_OFFSET",
       "SETTINGS_TZ_LABEL",
       "SETTINGS_TEMP_UNIT",
-      "SETTINGS_THEME"
+      "SETTINGS_THEME",
+      "SETTINGS_ACCENT"
     ],
     "resources": {
       "media": [
