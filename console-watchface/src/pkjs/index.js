@@ -3,6 +3,7 @@
 var Clay          = require('pebble-clay');
 var timezones     = require('./timezones.js');
 var complications = require('./complications.js');
+var accent        = require('./accent.js');
 var clayCustomFn  = require('./clay-custom.js');
 var clay          = new Clay(require('./config.js'), clayCustomFn, { autoHandleEvents: false });
 
@@ -52,14 +53,16 @@ var DEFAULT_SETTINGS = {
   zone:         timezones.DEFAULT_ZONE,
   tzLabel:      '',                    // blank means "use the built-in label"
   tempUnit:     'C',
-  theme:        false
+  theme:        false,
+  accent:       accent.DEFAULT_ACCENT
 };
 
 /**
  * Bring a settings object read from storage up to the current shape. Older
- * builds stored a three-letter `tzKey`, had no custom label, and had no
- * complication picker — those upgrade to the second timezone, so an existing
- * install looks unchanged after the update.
+ * builds stored a three-letter `tzKey`, had no custom label, and had neither a
+ * complication picker nor an accent colour. The complication defaults to the
+ * second timezone and the accent to the original orange, so an existing install
+ * looks unchanged after the update.
  */
 function migrateSettings(stored) {
   if (!stored) return DEFAULT_SETTINGS;
@@ -69,7 +72,8 @@ function migrateSettings(stored) {
     zone:         timezones.resolveZone(stored.zone || stored.tzKey),
     tzLabel:      timezones.normaliseLabel(stored.tzLabel),
     tempUnit:     stored.tempUnit === 'F' ? 'F' : 'C',
-    theme:        !!stored.theme
+    theme:        !!stored.theme,
+    accent:       accent.resolveAccent(stored.accent)
   };
 }
 
@@ -113,7 +117,8 @@ function sendSettingsToWatch(settings) {
     SETTINGS_TZ_OFFSET:    timezones.getOffsetMinutes(settings.zone),
     SETTINGS_TZ_LABEL:     resolveFooterLabel(settings),
     SETTINGS_TEMP_UNIT:    settings.tempUnit === 'F' ? 1 : 0,
-    SETTINGS_THEME:        settings.theme ? 1 : 0
+    SETTINGS_THEME:        settings.theme ? 1 : 0,
+    SETTINGS_ACCENT:       accent.resolveAccent(settings.accent)
   }, function() {
     console.log('Settings sent: ' + JSON.stringify(settings));
   }, function(e) {
@@ -225,7 +230,9 @@ Pebble.addEventListener('webviewclosed', function(e) {
       tzLabel:      timezones.normaliseLabel(
                       claySettings.SETTINGS_TZ_LABEL && claySettings.SETTINGS_TZ_LABEL.value),
       tempUnit:     (claySettings.SETTINGS_TEMP_UNIT && claySettings.SETTINGS_TEMP_UNIT.value) || 'C',
-      theme:        !!(claySettings.SETTINGS_THEME && claySettings.SETTINGS_THEME.value)
+      theme:        !!(claySettings.SETTINGS_THEME && claySettings.SETTINGS_THEME.value),
+      accent:       accent.resolveAccent(
+                      claySettings.SETTINGS_ACCENT && claySettings.SETTINGS_ACCENT.value)
     };
     saveSettings(settings);
     sendSettingsToWatch(settings);

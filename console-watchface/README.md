@@ -69,8 +69,14 @@ built-in `STEPS` / `BATTERY` / `HEART` / `CALS` — automatically.
 
 ### Theme
 
-A light/dark toggle swaps the background and text colours; the accent colour
-stays constant.
+A light/dark toggle swaps the background and text colours.
+
+### Accent colour
+
+The accent — the clock's colon and the bottom-row marker dot — is configurable
+from the full Pebble colour palette. It defaults to the original orange
+(`GColorSunsetOrange`), so an install that never opens the config page is
+unchanged.
 
 ## Configuration
 
@@ -149,6 +155,7 @@ The watchface is split across the standard Pebble C / PebbleKit JS boundary.
 | `src/pkjs/index.js`         | Phone side: weather fetch, settings, AppMessage to the watch |
 | `src/pkjs/timezones.js`     | The 36-zone table, offset resolution, label normalisation |
 | `src/pkjs/complications.js` | The complication list; the source of truth mirrored by the C enum |
+| `src/pkjs/accent.js`        | The accent colour default and validation |
 | `src/pkjs/config.js`        | The Clay config page definition |
 | `src/pkjs/clay-custom.js`   | Clay custom function that shows/hides the city picker |
 | `clay-proxy.html`           | Local config-page host for the emulator (see above) |
