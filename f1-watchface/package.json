@@ -1,0 +1,97 @@
+{
+  "name": "f1-watchface",
+  "author": "Ciaran",
+  "version": "1.0.0",
+  "keywords": ["pebble-app"],
+  "private": true,
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "pebble-clay": "^1.0.4"
+  },
+  "pebble": {
+    "displayName": "Pit Wall",
+    "uuid": "f630da32-a8d0-44a3-b23c-8c95e5577338",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": ["emery"],
+    "capabilities": ["configurable"],
+    "watchapp": {
+      "watchface": true
+    },
+    "messageKeys": [
+      "F1_EVENT",
+      "F1_SESSION",
+      "F1_SESSION_DATE",
+      "F1_NEXT_LABEL",
+      "F1_NEXT_DATES",
+      "F1_P1_POS",
+      "F1_P1_CODE",
+      "F1_P1_TIME",
+      "F1_P2_POS",
+      "F1_P2_CODE",
+      "F1_P2_TIME",
+      "F1_P3_POS",
+      "F1_P3_CODE",
+      "F1_P3_TIME",
+      "SETTINGS_THEME",
+      "SETTINGS_ACCENT",
+      "SETTINGS_GAP_MODE",
+      "SETTINGS_SOURCE",
+      "SETTINGS_API_KEY"
+    ],
+    "resources": {
+      "media": [
+        {
+          "menuIcon": true,
+          "type": "png",
+          "name": "IMAGE_MENU_ICON",
+          "file": "images/menu_icon.png"
+        },
+        {
+          "type": "font",
+          "name": "SPACE_GROTESK_72",
+          "file": "fonts/SpaceGrotesk-SemiBold.ttf",
+          "compatibility": "2.7",
+          "characterRegex": "[0-9:]"
+        },
+        {
+          "type": "font",
+          "name": "SPACE_GROTESK_36",
+          "file": "fonts/SpaceGrotesk-SemiBold.ttf",
+          "compatibility": "2.7",
+          "characterRegex": "[0-9:]"
+        },
+        {
+          "type": "font",
+          "name": "SPACE_GROTESK_26",
+          "file": "fonts/SpaceGrotesk-SemiBold.ttf",
+          "compatibility": "2.7",
+          "characterRegex": "[-0-9:.+L]"
+        },
+        {
+          "type": "font",
+          "name": "SPACE_MONO_20",
+          "file": "fonts/SpaceMono-Regular.ttf",
+          "compatibility": "2.7",
+          "characterRegex": "[-0-9A-Z]"
+        },
+        {
+          "type": "font",
+          "name": "SPACE_MONO_18",
+          "file": "fonts/SpaceMono-Regular.ttf",
+          "compatibility": "2.7",
+          "characterRegex": "[-0-9A-Z ]"
+        },
+        {
+          "type": "font",
+          "name": "SPACE_MONO_14",
+          "file": "fonts/SpaceMono-Regular.ttf",
+          "compatibility": "2.7",
+          "characterRegex": "[-0-9A-Z :./+]"
+        }
+      ]
+    }
+  }
+}
