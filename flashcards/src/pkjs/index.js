@@ -4,7 +4,13 @@ var Clay         = require('pebble-clay');
 var deck         = require('./deck.js');
 var accent       = require('./accent.js');
 var clayCustomFn = require('./clay-custom.js');
+var deckEditor   = require('./deck-editor.js');
 var clay         = new Clay(require('./config.js'), clayCustomFn, { autoHandleEvents: false });
+
+// Clay skips an unknown component type without complaint, and the config page
+// then stops building where it meets one — so a missing registration shows up
+// as a page that is silently half there. See src/pkjs/deck-editor.js.
+clay.registerComponent(deckEditor);
 
 // ---------------------------------------------------------------------------
 // The phone half of Cue Card.

@@ -174,6 +174,55 @@ function chunkUtf8(value, maxBytes) {
 }
 
 // ---------------------------------------------------------------------------
+// Separators
+// ---------------------------------------------------------------------------
+
+// What may sit between a card's two sides, in order of preference.
+var SIDE_SEPARATORS = ['|', '\t', ';', ','];
+
+/**
+ * Work out what separates the two sides of a card in this text.
+ *
+ * Deck text no longer comes only from someone typing it: the config page emits
+ * it, and a Deck URL may point at whatever a spreadsheet or Anki exported. So
+ * rather than insisting on the pipe, the separator is chosen from the text.
+ *
+ * A pipe anywhere wins outright, which is what keeps every deck written before
+ * this existed parsing exactly as it did. Only when there is no pipe at all do
+ * the others get a look, and then it is whichever splits the most lines in two
+ * — a tab beats a comma on a file where both appear, because the commas are
+ * almost always inside the answers rather than between the columns.
+ */
+function detectSeparator(text) {
+  var lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
+  var best = SIDE_SEPARATORS[0];
+  var bestScore = 0;
+
+  for (var s = 0; s < SIDE_SEPARATORS.length; s++) {
+    var separator = SIDE_SEPARATORS[s];
+    var score = 0;
+
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].trim();
+
+      // Headings are not cards and never carry a separator worth counting.
+      if (line === '' || line.charAt(0) === '#') continue;
+      if (line.indexOf(separator) > 0) score++;
+    }
+
+    // The pipe is the format's own mark: one is enough to settle it.
+    if (separator === '|' && score > 0) return '|';
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = separator;
+    }
+  }
+
+  return best;
+}
+
+// ---------------------------------------------------------------------------
 // Parsing
 // ---------------------------------------------------------------------------
 
@@ -231,6 +280,7 @@ function parse(text) {
   // Normalise the line endings a pasted or fetched file arrives with, so that a
   // stray \r never becomes part of a card's last word.
   var lines = String(text).replace(/\r\n?/g, '\n').split('\n');
+  var separator = detectSeparator(text);
 
   /** Close off the deck being built, keeping it only if it earned a place. */
   function commitCurrentDeck() {
@@ -280,17 +330,18 @@ function parse(text) {
       continue;
     }
 
-    var separatorIndex = line.indexOf('|');
+    var separatorIndex = line.indexOf(separator);
 
     if (separatorIndex === -1) {
       errors.push({
         line: lineNumber,
-        message: 'No | on this line, so it is neither a card nor a # heading. Skipped.'
+        message: 'No ' + (separator === '\t' ? 'tab' : separator) +
+                 ' on this line, so it is neither a card nor a # heading. Skipped.'
       });
       continue;
     }
 
-    // Split on the first pipe only: a back may legitimately contain one
+    // Split on the first separator only: a back may legitimately contain one
     // ("tá sé | it is | he is"), a front may not, and the asymmetry is easier
     // to explain than an escaping rule.
     var front = clean(line.substring(0, separatorIndex));
@@ -515,6 +566,8 @@ module.exports = {
   CHUNK_BYTES: CHUNK_BYTES,
   UNTITLED: UNTITLED,
   SAMPLE_TEXT: SAMPLE_TEXT,
+  SIDE_SEPARATORS: SIDE_SEPARATORS,
+  detectSeparator: detectSeparator,
   utf8Length: utf8Length,
   chunkUtf8: chunkUtf8,
   parse: parse,

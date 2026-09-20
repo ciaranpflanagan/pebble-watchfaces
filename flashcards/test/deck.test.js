@@ -423,3 +423,76 @@ test('the index and a full deck together stay under the watch 4 kB', () => {
   assert.ok(indexBytes + heaviest <= 4096 - 400,
     'index ' + indexBytes + ' + deck ' + heaviest + ' leaves too little headroom');
 });
+
+// ---------------------------------------------------------------------------
+// Separator detection
+// ---------------------------------------------------------------------------
+// Deck text stopped being something only a person types: the config page emits
+// it, and a Deck URL may point at whatever a spreadsheet exported. The pipe
+// still wins outright wherever it appears, so every deck written before this
+// existed parses exactly as it did.
+
+test('a pipe anywhere settles the separator', () => {
+  assert.strictEqual(deck.detectSeparator('# A\nDia duit | Hello'), '|');
+  // Even when commas outnumber it, because the pipe is the format's own mark.
+  assert.strictEqual(deck.detectSeparator('a, b, c | d\nx, y, z | w'), '|');
+});
+
+test('a tab-separated export is detected', () => {
+  assert.strictEqual(deck.detectSeparator('Dia duit\tHello\nSlán\tGoodbye'), '\t');
+});
+
+test('a tab beats a comma when both appear', () => {
+  // The commas are inside the answers; the tabs are between the columns.
+  assert.strictEqual(deck.detectSeparator('a\tone, two\nb\tthree, four'), '\t');
+});
+
+test('a comma-separated export is detected', () => {
+  assert.strictEqual(deck.detectSeparator('France,Paris\nSpain,Madrid'), ',');
+});
+
+test('headings are not counted when detecting', () => {
+  // "# Capitals, Europe" has a comma but is not a card.
+  assert.strictEqual(deck.detectSeparator('# Capitals, Europe\nFrance\tParis'), '\t');
+});
+
+test('text with no separator at all falls back to the pipe', () => {
+  assert.strictEqual(deck.detectSeparator('just some words\nand more'), '|');
+});
+
+test('a tab-separated deck parses into cards', () => {
+  const result = deck.parse('# Irish\nDia duit\tHello\nSlán\tGoodbye');
+
+  assert.deepStrictEqual(result.errors, []);
+  assert.deepStrictEqual(result.decks[0].cards, [
+    { front: 'Dia duit', back: 'Hello' },
+    { front: 'Slán', back: 'Goodbye' }
+  ]);
+});
+
+test('a comma-separated deck parses into cards', () => {
+  const result = deck.parse('# Capitals\nFrance,Paris\nSpain,Madrid');
+
+  assert.deepStrictEqual(result.errors, []);
+  assert.deepStrictEqual(result.decks[0].cards, [
+    { front: 'France', back: 'Paris' },
+    { front: 'Spain', back: 'Madrid' }
+  ]);
+});
+
+test('a pipe deck containing commas is unaffected', () => {
+  // The regression this guards: commas inside answers must not become splits.
+  const result = deck.parse('# D\ntá sé | it is, or he is\na | b');
+
+  assert.deepStrictEqual(result.decks[0].cards, [
+    { front: 'tá sé', back: 'it is, or he is' },
+    { front: 'a', back: 'b' }
+  ]);
+});
+
+test('the error names the separator it was actually looking for', () => {
+  const result = deck.parse('# D\na\tb\nthis line has no tab');
+
+  assert.strictEqual(result.errors.length, 1);
+  assert.match(result.errors[0].message, /No tab on this line/);
+});

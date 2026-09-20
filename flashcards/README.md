@@ -20,7 +20,34 @@ around before the session ends.
 
 ## Writing decks
 
-One `#` heading per deck, one card per line, with a `|` between the two sides:
+Three ways in, and the **Deck URL** wins over the other two if it is set.
+
+### In the settings
+
+Pick a deck, type a front and a back, press **Add**. The card joins the list
+below and the boxes clear for the next one. Enter moves from front to back and
+then adds, so a run of cards never needs the screen.
+
+**New**, **Rename** and **Delete** manage the decks themselves.
+
+### Import a file
+
+**Choose file** takes a two-column CSV or TSV — front, then back — and appends
+it to the deck you are on. That covers an Anki or Quizlet export, or anything
+out of a spreadsheet. Quoted fields are handled, so an answer containing a comma
+survives, and a `Front,Back` header row is dropped rather than imported as a
+card.
+
+### Point at a URL
+
+**Deck URL** takes a plain-text file anywhere reachable over HTTP — a raw Gist,
+or a published Google Sheet's CSV export. Editing the deck then never means
+opening the settings at all. A URL that cannot be reached falls back to the last
+copy that worked, so a tunnel or a dead Wi-Fi network does not empty the watch.
+
+### The format underneath
+
+The settings editor writes this, and a Deck URL can serve it directly:
 
 ```
 # Irish Phrases
@@ -29,23 +56,18 @@ Go raibh maith agat | Thank you
 
 # Capitals
 Ireland | Dublin
-Portugal | Lisbon
 ```
 
-Blank lines are ignored. Only the first `|` splits a card, so an answer may
-contain one of its own (`tá sé | it is | he is`). Cards written before any
-heading go into a deck called *Untitled*, so a file with no headings at all
-still works.
+A `#` heading opens a deck; everything under it is a card. Blank lines are
+ignored, and cards before any heading go into a deck called *Untitled*, so a
+file with no headings still works.
 
-Two ways to get that text onto the phone, and the **Deck URL** wins if both are
-set:
-
-- **Deck URL** — a plain-text file anywhere reachable over HTTP. A raw Gist is
-  the easy option. Editing the deck no longer means opening the settings.
-- **Decks** — a textarea in the settings, for something quick.
-
-A URL that cannot be reached falls back to the last copy that worked, so a
-tunnel or a dead Wi-Fi network does not empty the watch.
+The separator is worked out from the file rather than insisted upon. A `|`
+anywhere wins outright — so nothing written by hand changes meaning — and only
+in its absence are tabs, semicolons and commas considered, whichever splits the
+most lines in two. That is what lets a Deck URL point straight at a CSV. Only
+the first separator splits a card, so an answer may contain one of its own
+(`tá sé | it is | he is`).
 
 ## Using it
 
@@ -135,6 +157,7 @@ src/pkjs/
   deck.js         parsing, limits, chunking, the fingerprint  (unit tested)
   index.js        settings, fetching, the chunked transfer
   config.js       the Clay settings page
+  deck-editor.js  the front/back/Add editor and CSV import, as a Clay component
 ```
 
 Card text is arbitrary, so this app uses the system Gothic faces rather than the
@@ -222,5 +245,15 @@ For the real settings page, see [Building](#building) above.
 
 ## Known edges
 
-- Decks cannot be edited on the watch. They are text on your phone, and that is
-  the whole of the authoring story.
+- Decks cannot be edited on the watch. They are written on the phone.
+- Clay has no multi-line or repeating field of its own, so the editor is a
+  custom component. Two things about that are worth knowing before touching
+  `deck-editor.js`: its `initialize` is serialised with `toString()` and
+  injected into the page, so it cannot `require()` anything or close over
+  anything — every helper has to be nested inside it. And Clay runs it *before*
+  setting the item's value, so the saved decks arrive later as a `change` event
+  rather than being readable up front.
+- Clay's own stylesheet gives every `button` a `min-width` of `12rem` and paints
+  `strong` orange. A component that does not explicitly override those two
+  inherits them, which looks like a layout bug in the component rather than
+  something arriving from outside it.

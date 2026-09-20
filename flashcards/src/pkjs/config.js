@@ -18,12 +18,9 @@ module.exports = [
       {
         'type': 'text',
         'defaultValue':
-          'One deck per <code>#</code> heading, one card per line, with a ' +
-          '<code>|</code> between the two sides:<br><br>' +
-          '<code># Irish Phrases<br>Dia duit | Hello<br>' +
-          'Go raibh maith agat | Thank you</code><br><br>' +
-          'Up to ' + deck.MAX_DECKS + ' decks. Every deck stays on your phone; ' +
-          'the watch holds the list of them and whichever one you last opened.'
+          'Up to ' + deck.MAX_DECKS + ' decks, ' + deck.MAX_CARDS_PER_DECK +
+          ' cards each. Every deck stays on your phone; the watch holds the ' +
+          'list of them and whichever one you last opened.'
       },
       {
         'type': 'input',
@@ -40,11 +37,10 @@ module.exports = [
       },
       // Hidden while a URL is set — see src/pkjs/clay-custom.js.
       {
-        'type': 'textarea',
+        'type': 'deckeditor',
         'messageKey': 'DECK_TEXT',
         'label': 'Decks',
-        'defaultValue': deck.SAMPLE_TEXT,
-        'description': 'Leave this empty to fall back to the sample decks.'
+        'defaultValue': deck.SAMPLE_TEXT
       }
     ]
   },
@@ -66,7 +62,11 @@ module.exports = [
         'type': 'color',
         'messageKey': 'SETTINGS_ACCENT',
         'label': 'Accent Colour',
-        'defaultValue': accent.toHexString(accent.DEFAULT_ACCENT),
+        // The raw integer, not '0xRRGGBB'. Clay's colour component lowercases
+        // whatever it is given and pads it to six characters, so a '0x' prefix
+        // survives into the sunlight palette lookup, misses, and paints the
+        // swatch '#undefined' — it renders blank rather than failing.
+        'defaultValue': accent.DEFAULT_ACCENT,
         'sunlight': true,
         'description': 'Marks the front of a card, the progress bar and the ' +
                        'selected deck.'
