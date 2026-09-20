@@ -168,10 +168,59 @@ back to localhost. Serving the page locally makes both ends local. A real phone
 never touches it — see `IS_EMULATOR` in `src/pkjs/index.js`, which `./build.sh
 --prod` sets to `false` for you.
 
+## Driving the emulator
+
+```bash
+pebble install --emulator emery --logs     # install, then stream logs
+pebble emu-button --emulator emery click select
+pebble screenshot --emulator emery --no-open shot.png
+pebble kill                                # stop every running emulator
+pebble wipe                                # clear emulator storage too
+```
+
+Buttons are `back`, `up`, `select`, `down` — **lowercase**, and the action comes
+first: `click` (press and release), `push` (hold), `release`. Several at once,
+or repeated, in one call:
+
+```bash
+pebble emu-button --emulator emery click select up
+pebble emu-button --emulator emery click down -n 3 -i 300
+pebble emu-button --emulator emery push select        # hold
+pebble emu-button --emulator emery release select
+```
+
+### Settings without the config page
+
+`send-app-message` injects an AppMessage straight into the running app, which is
+far quicker than opening Clay to try a colour. It wants **numeric** keys, which
+the build writes to `build/appinfo.json`:
+
+```bash
+python3 -c "import json;print(json.load(open('build/appinfo.json'))['appKeys'])"
+
+# light theme, red accent  (10000 = SETTINGS_THEME, 10001 = SETTINGS_ACCENT)
+pebble send-app-message --emulator emery --int 10000=1 10001=16733525
+```
+
+Note the single `--int` taking both pairs. Passing `--int` twice does **not**
+send two keys — argparse keeps only the last one, so the first is silently
+dropped and you get a message that looks half-applied.
+
+For the real settings page, see [Building](#building) above.
+
+### Gotchas
+
+- **One emulator at a time.** Two instances take installs and screenshots on
+  different watches, which looks exactly like an app ignoring its buttons.
+  `pebble kill` first if in doubt.
+- **Space out button presses.** Several `emu-button` calls fired back to back
+  get dropped; use `-n`/`-i`, or put a second between them.
+- **The emulator keeps its state** across runs, app included — handy for testing
+  persistence, confusing when you expect a fresh boot. `pebble wipe` clears it.
+- **Stream logs via `install --logs`.** `pebble logs` backgrounded on its own
+  captured nothing here.
+
 ## Known edges
 
-- **One emulator at a time.** Two running instances will take an install and a
-  screenshot on different watches, which looks exactly like an app that ignores
-  its buttons.
 - Decks cannot be edited on the watch. They are text on your phone, and that is
   the whole of the authoring story.
