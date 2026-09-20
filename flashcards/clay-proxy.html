@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+<script>
+  // Mirrors what clay.pebble.com.s3 does:
+  // 1. Decode the full config page HTML from the URL hash
+  // 2. Substitute the $$$RETURN_TO$$$ placeholder with the return_to query param
+  // 3. Write the resulting HTML into the document
+  // Serving this locally means both the page origin and the return_to target
+  // are localhost, so Chrome's Private Network Access policy doesn't block it.
+  var params   = new URLSearchParams(window.location.search);
+  var returnTo = params.get('return_to') || 'pebblejs://close#';
+  var html     = decodeURIComponent(window.location.hash.slice(1));
+  html         = html.replace('$$RETURN_TO$$', returnTo);
+  document.open('text/html');
+  document.write(html);
+  document.close();
+</script>
+</body>
+</html>
