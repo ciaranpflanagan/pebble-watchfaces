@@ -352,3 +352,74 @@ test('the signature fits in the positive half of a 32-bit integer', () => {
     assert.ok(Number.isInteger(value) && value >= 0 && value <= 0x7fffffff, 'out of range: ' + value);
   }
 });
+
+// ---------------------------------------------------------------------------
+// The index budget — a character limit is not a byte limit
+// ---------------------------------------------------------------------------
+
+test('a full library of ASCII titles fits the index budget untouched', () => {
+  const lines = [];
+  for (let i = 0; i < deck.MAX_DECKS; i++) lines.push('# Deck number ' + i, 'a | b');
+
+  const result = deck.parse(lines.join('\n'));
+
+  assert.strictEqual(result.decks.length, deck.MAX_DECKS);
+  assert.ok(Buffer.byteLength(deck.serialiseIndex(result.decks), 'utf8') <= deck.MAX_INDEX_BYTES);
+  assert.deepStrictEqual(result.errors, []);
+});
+
+test('titles of multi-byte characters are shortened to fit the index budget', () => {
+  // The case the byte budget exists for: 24 characters of Japanese is 72 bytes,
+  // and twelve such titles would be well over a kilobyte on the watch.
+  const wide = '語'.repeat(deck.MAX_TITLE_CHARS);
+  const lines = [];
+  for (let i = 0; i < deck.MAX_DECKS; i++) lines.push('# ' + wide, 'a | b');
+
+  const result = deck.parse(lines.join('\n'));
+  const bytes = Buffer.byteLength(deck.serialiseIndex(result.decks), 'utf8');
+
+  assert.ok(bytes <= deck.MAX_INDEX_BYTES, 'index was ' + bytes + ' bytes');
+  assert.ok(result.errors.length > 0, 'shortening should be reported');
+});
+
+test('shortening never splits a character', () => {
+  const wide = 'á'.repeat(deck.MAX_TITLE_CHARS);
+  const lines = [];
+  for (let i = 0; i < deck.MAX_DECKS; i++) lines.push('# ' + wide + i, 'a | b');
+
+  const result = deck.parse(lines.join('\n'));
+
+  for (const d of result.decks) {
+    assert.strictEqual(Buffer.from(d.title, 'utf8').toString('utf8'), d.title,
+      'title did not survive a UTF-8 round trip: ' + d.title);
+  }
+});
+
+test('fitIndex always terminates, even on titles it cannot usefully trim', () => {
+  // Single wide characters: trimming one byte off cannot shorten them, so the
+  // only way to fit is to drop decks. The guard against spinning forever.
+  const decks = [];
+  for (let i = 0; i < deck.MAX_DECKS; i++) {
+    decks.push({ title: '語', cards: [{ front: 'a', back: 'b' }], bytes: 4 });
+  }
+
+  const errors = [];
+  const fitted = deck.fitIndex(decks, errors);
+
+  assert.ok(Buffer.byteLength(deck.serialiseIndex(fitted), 'utf8') <= deck.MAX_INDEX_BYTES);
+});
+
+test('the index and a full deck together stay under the watch 4 kB', () => {
+  const side = 'x'.repeat(deck.MAX_SIDE_CHARS);
+  const lines = [];
+  for (let i = 0; i < deck.MAX_DECKS; i++) lines.push('# Deck number ' + i, 'a | b');
+  lines.push('# Heavy');
+  for (let i = 0; i < 40; i++) lines.push(side + ' | ' + side);
+
+  const parsed = deck.parse(lines.join('\n')).decks;
+  const indexBytes = Buffer.byteLength(deck.serialiseIndex(parsed), 'utf8');
+  const heaviest = Math.max(...parsed.map((d) => d.bytes));
+
+  assert.ok(indexBytes + heaviest <= 4096 - 400,
+    'index ' + indexBytes + ' + deck ' + heaviest + ' leaves too little headroom');
+});

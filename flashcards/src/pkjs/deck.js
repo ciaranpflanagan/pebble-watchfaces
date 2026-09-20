@@ -65,6 +65,17 @@ var MAX_CARDS_PER_DECK = 100;
 // What one deck's serialised cards may occupy on the watch, in bytes.
 var DECK_BUDGET_BYTES = 3072;
 
+// What the whole deck index may occupy on the watch, in bytes. The index is
+// kept permanently and the cards are not, so the two budgets live side by side
+// under the 4 kB: 3072 + 512 leaves a few hundred bytes spare, and a persistent
+// store with nothing spare is one that fails its next write.
+//
+// This is a *byte* budget over a character limit, and the difference is the
+// whole point of it: MAX_TITLE_CHARS counts characters, and a title of Irish or
+// Japanese runs to two, three or four bytes each. Twelve worst-case titles
+// would be a kilobyte on their own.
+var MAX_INDEX_BYTES = 512;
+
 // Chunk size for both AppMessage transfer and persist fields. Under Pebble's
 // 256-byte field limit, with margin for the NUL terminator and for the header
 // the transfer puts alongside each chunk.
@@ -339,6 +350,19 @@ function parse(text) {
     decks = decks.slice(0, MAX_DECKS);
   }
 
+  var titlesBefore = decks.map(function(d) { return d.title; });
+  decks = fitIndex(decks, errors);
+
+  for (var t = 0; t < decks.length; t++) {
+    if (decks[t].title !== titlesBefore[t]) {
+      errors.push({
+        line: decks[t].line,
+        message: 'Deck name shortened to "' + decks[t].title +
+                 '" to fit the watch\'s deck list.'
+      });
+    }
+  }
+
   if (decks.length === 0) {
     errors.push({ line: null, message: 'No usable decks were found in the text.' });
   }
@@ -376,6 +400,64 @@ function serialiseIndex(decks) {
   }
 
   return parts.length === 0 ? '' : parts.join(RECORD_SEPARATOR) + RECORD_SEPARATOR;
+}
+
+/**
+ * Shrink the index until it fits MAX_INDEX_BYTES, reporting what it cost.
+ *
+ * Titles are trimmed first, byte-safely and worst-offender first, because a
+ * shortened name still finds the right deck in the list; only if that is not
+ * enough are whole decks dropped from the end. Mutates the titles in place,
+ * which is what the caller wants: everything downstream — the index, the
+ * signature, the menu — should agree on the shortened name.
+ */
+function fitIndex(decks, errors) {
+  var MIN_TITLE_BYTES = 6;
+  var kept = decks;
+
+  function indexBytes() {
+    return utf8Length(serialiseIndex(kept));
+  }
+
+  while (indexBytes() > MAX_INDEX_BYTES) {
+    // The longest title is the one with the most to give up.
+    var longest = 0;
+
+    for (var i = 1; i < kept.length; i++) {
+      if (utf8Length(kept[i].title) > utf8Length(kept[longest].title)) longest = i;
+    }
+
+    var title = kept[longest].title;
+    var bytes = utf8Length(title);
+
+    if (bytes > MIN_TITLE_BYTES) {
+      // chunkUtf8 gives the longest prefix that fits without splitting a
+      // character, which is exactly the trim wanted here.
+      var trimmed = chunkUtf8(title, bytes - 1)[0] || '';
+      kept[longest].title = trimmed.trim();
+
+      if (utf8Length(kept[longest].title) >= bytes) {
+        // Trimming has stopped making progress (a title of one wide character,
+        // say). Drop a deck rather than spin.
+        kept[longest].title = title;
+        bytes = MIN_TITLE_BYTES;
+      }
+    }
+
+    if (bytes <= MIN_TITLE_BYTES) {
+      var dropped = kept[kept.length - 1];
+      kept = kept.slice(0, kept.length - 1);
+      errors.push({
+        line: null,
+        message: 'The deck list is too long for the watch, so "' + dropped.title +
+                 '" was dropped.'
+      });
+
+      if (kept.length === 0) return kept;
+    }
+  }
+
+  return kept;
 }
 
 /** A deck's cards, split into transferable and storable pieces. */
@@ -429,6 +511,7 @@ module.exports = {
   MAX_SIDE_CHARS: MAX_SIDE_CHARS,
   MAX_CARDS_PER_DECK: MAX_CARDS_PER_DECK,
   DECK_BUDGET_BYTES: DECK_BUDGET_BYTES,
+  MAX_INDEX_BYTES: MAX_INDEX_BYTES,
   CHUNK_BYTES: CHUNK_BYTES,
   UNTITLED: UNTITLED,
   SAMPLE_TEXT: SAMPLE_TEXT,
@@ -439,5 +522,6 @@ module.exports = {
   serialiseCards: serialiseCards,
   serialiseIndex: serialiseIndex,
   chunkCards: chunkCards,
+  fitIndex: fitIndex,
   signature: signature
 };
