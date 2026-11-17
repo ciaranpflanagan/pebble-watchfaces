@@ -1,0 +1,81 @@
+{
+  "name": "whoop-watchface",
+  "author": "Ciaran",
+  "version": "0.1.0",
+  "keywords": ["pebble-app"],
+  "private": true,
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "pebble-clay": "^1.0.4"
+  },
+  "pebble": {
+    "displayName": "Triad",
+    "uuid": "ff261e9b-8bb4-4c72-920f-f917a650a1bf",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": ["emery"],
+    "capabilities": ["configurable", "location"],
+    "watchapp": {
+      "watchface": true
+    },
+    "messageKeys": [
+      "WEATHER_TEMP",
+      "WEATHER_ICON",
+      "WHOOP_RECOVERY",
+      "WHOOP_SLEEP_PERF",
+      "WHOOP_SLEEP_MINS",
+      "WHOOP_STRAIN",
+      "WHOOP_SYNC_TIME",
+      "SETTINGS_TEMP_UNIT",
+      "SETTINGS_THEME",
+      "SETTINGS_ACCENT"
+    ],
+    "resources": {
+      "media": [
+        {
+          "menuIcon": true,
+          "type": "png",
+          "name": "IMAGE_MENU_ICON",
+          "file": "images/menu_icon.png"
+        },
+        {
+          "type": "font",
+          "name": "SPACE_GROTESK_56",
+          "file": "fonts/SpaceGrotesk-SemiBold.ttf",
+          "compatibility": "2.7",
+          "characterRegex": "[0-9:]"
+        },
+        {
+          "type": "font",
+          "name": "SPACE_GROTESK_18",
+          "file": "fonts/SpaceGrotesk-SemiBold.ttf",
+          "compatibility": "2.7",
+          "characterRegex": "[-0-9.°CF]"
+        },
+        {
+          "type": "font",
+          "name": "SPACE_MONO_18",
+          "file": "fonts/SpaceMono-Regular.ttf",
+          "compatibility": "2.7",
+          "characterRegex": "[0-9A-Z ]"
+        },
+        {
+          "type": "font",
+          "name": "SPACE_MONO_13",
+          "file": "fonts/SpaceMono-Regular.ttf",
+          "compatibility": "2.7",
+          "characterRegex": "[A-Z]"
+        },
+        {
+          "type": "font",
+          "name": "SPACE_MONO_11",
+          "file": "fonts/SpaceMono-Regular.ttf",
+          "compatibility": "2.7",
+          "characterRegex": "[-A-Z0-9 :]"
+        }
+      ]
+    }
+  }
+}
