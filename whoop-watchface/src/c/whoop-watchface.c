@@ -95,14 +95,14 @@ typedef enum {
 // The three gauges, left to right
 // ---------------------------------------------------------------------------
 typedef enum {
-  METRIC_RECOVERY = 0,
-  METRIC_SLEEP    = 1,
+  METRIC_SLEEP    = 0,
+  METRIC_RECOVERY = 1,
   METRIC_STRAIN   = 2,
   METRIC_COUNT
 } Metric;
 
 static const char * const METRIC_LABELS[METRIC_COUNT] = {
-  "RECOVERY", "SLEEP", "STRAIN"
+  "SLEEP", "RECOVERY", "STRAIN"
 };
 
 // Shown whenever there is no reading: never synced, or Whoop has not scored it.

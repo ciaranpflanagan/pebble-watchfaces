@@ -2,7 +2,7 @@
 
 A Whoop watchface for the **Pebble Time 2 (emery)**, in the same clean style as
 [Homezone](../console-watchface). The time sits up top; below it are three ring
-gauges for Whoop's core metrics: **recovery**, **sleep** and **strain**.
+gauges for Whoop's core metrics: **sleep**, **recovery** and **strain**.
 
 <p align="center">
   <img src="design-preview.png" alt="Design preview of Triad in five states">
@@ -33,15 +33,15 @@ off before any API work.
 
           21:44                  ← time (accent-coloured colon)
   ────────────────────────────
-   (78)      (91)      (12.4)    ← ring gauges
-  RECOVERY   SLEEP     STRAIN
+   (91)      (78)      (12.4)    ← ring gauges
+   SLEEP    RECOVERY   STRAIN
   SLEPT 7H 42M      SYNC 21:32   ← hours asleep · last Whoop sync
 ```
 
 | Ring | Value | Fill | Colour |
 |------|-------|------|--------|
-| Recovery | Recovery score, % | 0–100 | Whoop zone: green ≥ 67, yellow 34–66, red ≤ 33 |
 | Sleep | Sleep performance, % | 0–100 | Blue-violet |
+| Recovery | Recovery score, % | 0–100 | Whoop zone: green ≥ 67, yellow 34–66, red ≤ 33 |
 | Strain | Day strain, one decimal | 0–21 | Accent colour |
 
 - **Stale data:** if the last sync is more than 3 hours old, the rings and
