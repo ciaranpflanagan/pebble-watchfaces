@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Triad: connecting to Whoop</title>
+<style>
+  body { font: 16px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
+         background: #111; color: #eee; margin: 0; padding: 32px 16px; }
+  p { max-width: 32em; }
+</style>
+</head>
+<body>
+<p id="message">Returning to Triad…</p>
+<script>
+  // Whoop's OAuth login redirects here with ?code=…&state=… (or ?error=…).
+  // This page holds no secrets: it only hands those values back to the
+  // watchface, which checks the state and swaps the code for tokens.
+  //
+  // Where to hand them back to:
+  //   - Real phone: the Pebble app's webview closes on pebblejs://close#…
+  //   - Emulator: `pebble emu-app-config` gives each config page its own
+  //     return_to URL. The config page (served by the emulator on another
+  //     localhost port) stores it in a cookie before sending the user to
+  //     Whoop; cookies ignore the port, so we can read it back here.
+  //
+  // Keep RETURN_TO_COOKIE in step with src/pkjs/config.js and the
+  // 'whoopAuth' marker in step with CALLBACK_MARKER in src/pkjs/whoop-auth.js.
+  var RETURN_TO_COOKIE = 'triadWhoopReturnTo';
+  var DEFAULT_RETURN_TO = 'pebblejs://close#';
+
+  function readCookie(name) {
+    var parts = document.cookie ? document.cookie.split('; ') : [];
+    for (var i = 0; i < parts.length; i++) {
+      var eq = parts[i].indexOf('=');
+      if (parts[i].substring(0, eq) === name) {
+        return decodeURIComponent(parts[i].substring(eq + 1));
+      }
+    }
+    return '';
+  }
+
+  var params = new URLSearchParams(window.location.search);
+
+  var returnTo = DEFAULT_RETURN_TO;
+  try {
+    returnTo = readCookie(RETURN_TO_COOKIE) || DEFAULT_RETURN_TO;
+    // One login, one use.
+    document.cookie = RETURN_TO_COOKIE + '=; path=/; max-age=0';
+  } catch (e) {
+    // Cookies blocked: fine on a real phone, where the default is right.
+    console.log('whoop-callback: could not read return_to (' + e + '), using default');
+  }
+
+  var payload = {
+    whoopAuth: {
+      code:  params.get('code')  || '',
+      state: params.get('state') || '',
+      // Whoop sends error=access_denied etc. Fold in the description if any.
+      error: params.get('error')
+               ? params.get('error') +
+                 (params.get('error_description') ? ': ' + params.get('error_description') : '')
+               : ''
+    }
+  };
+
+  if (!payload.whoopAuth.code && !payload.whoopAuth.error) {
+    payload.whoopAuth.error = 'no code in the callback URL';
+  }
+
+  document.getElementById('message').textContent = payload.whoopAuth.error
+    ? 'Whoop login did not complete (' + payload.whoopAuth.error + '). Returning to Triad…'
+    : 'Logged in. Returning to Triad…';
+
+  window.location.href = returnTo + encodeURIComponent(JSON.stringify(payload));
+</script>
+</body>
+</html>

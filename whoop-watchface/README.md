@@ -14,14 +14,16 @@ gauges for Whoop's core metrics: **recovery**, **sleep** and **strain**.
 
 ## Status
 
-**Phase 1 of 4: design, with sample data.** The face draws a fixed sample
-snapshot (`USE_MOCK_WHOOP` in `src/pkjs/index.js`) so the layout can be signed
-off before any API work.
+**Phase 2 of 4: connecting to Whoop.** The phone can log in to Whoop and keep
+its tokens fresh, but the face still draws a fixed sample snapshot
+(`USE_MOCK_WHOOP` in `src/pkjs/index.js`) until phase 3 fetches real data.
+Connecting works in the emulator only for now: a real phone needs the
+callback page hosted on https (see below).
 
 | Phase | Scope | Status |
 |-------|-------|--------|
 | 1 | Layout, weather, settings, sample Whoop data | ✅ |
-| 2 | Whoop credentials on the config page, OAuth connect, token refresh | — |
+| 2 | Whoop credentials on the config page, OAuth connect, token refresh | ✅ emulator |
 | 3 | Live recovery / sleep / strain from the Whoop API | — |
 | 4 | Polish, release build | — |
 
@@ -59,22 +61,49 @@ Through a [Clay](https://github.com/pebble/clay) config page:
 - Accent colour, which colours the clock colon and the strain ring (Picton
   blue by default)
 - Temperature unit, °C / °F
+- Whoop client ID and secret, and the Connect button (see below)
 
-The emulator config workaround is the same as Homezone's: see
-[its README](../console-watchface/README.md#configuration).
+In the emulator, `pebble emu-app-config --emulator emery` opens the page in your
+browser. The emulator (pebble-tool 5) serves it itself from a `data:` URI; see
+`src/pkjs/emulator-config.js`. `build.sh --prod` switches this off for release
+builds. Homezone's old `clay-proxy.html` workaround no longer works with
+pebble-tool 5 and isn't used here.
 
-## How Whoop access will work (phases 2–3)
+## Connecting to Whoop
 
-Each user brings their own Whoop developer app, so no secret ships in the `.pbw`:
+For now each user brings their own Whoop developer app, so no secret ships in
+the `.pbw` or this repo.
 
-1. Create an app at the Whoop developer dashboard with scopes `read:recovery`,
-   `read:sleep`, `read:cycles` and `offline`.
-2. Paste its client ID and secret into the watchface's config page. They are
-   stored only on your phone.
-3. Connect: Whoop's login redirects to a small static page (hosted on Azure
-   Static Web Apps, no secrets) that hands the code back to the watchface.
-4. The phone exchanges and refreshes tokens itself, and polls Whoop every
-   15 minutes.
+1. Create an app in the [Whoop developer dashboard](https://developer.whoop.com)
+   with the scopes `read:recovery`, `read:sleep`, `read:cycles` and `offline`,
+   and the redirect URL `http://localhost:8888/whoop-callback.html`.
+2. Serve this folder and open the config page in the emulator:
+
+   ```sh
+   python3 -m http.server 8888 --directory .   # terminal 1, serves whoop-callback.html
+   ./build.sh --install                         # terminal 2
+   pebble emu-app-config --emulator emery
+   ```
+
+3. Paste the app's client ID and secret into the **Whoop** section and Save.
+   They are stored only on the phone (or emulator), never sent to the watch.
+4. Run `pebble emu-app-config --emulator emery` again and tap **Connect to
+   Whoop**. Log in and allow access; Whoop redirects to `whoop-callback.html`,
+   which hands the code back to the watchface. The phone swaps it for tokens.
+5. Reopen the config page: it should say **Connected to Whoop**. `pebble logs
+   --emulator emery` shows `Whoop code exchange OK` and the token expiry.
+
+Afterwards the phone refreshes the access token (about hourly) before it
+expires. Whoop rotates the refresh token on every refresh, so only one refresh
+runs at a time and the new token is saved straight away. If Whoop rejects the
+refresh token, the connection is cleared and the config page asks you to
+reconnect. Changing the client ID or secret also disconnects.
+
+**Real phones:** the redirect URL must be an https page, so
+`whoop-callback.html` has to be hosted (e.g. an Azure Static Web App), added as
+a redirect URL on the Whoop app, and set as `WHOOP_REDIRECT_URI_PHONE` in
+`src/pkjs/index.js`. Until then the config page explains that connecting on a
+phone isn't available yet.
 
 ## Building & running
 
@@ -94,7 +123,8 @@ npm test
 ```
 
 The tests cover the Whoop payload (integer encoding, clamping, unscored values),
-recovery zones and weather mapping. They also read the C source and
+recovery zones, weather mapping and the Whoop connection (login URL, token
+requests and responses, refresh timing, callback checks). They also read the C source and
 `package.json` back and check that message keys, the icon enum, the recovery
 thresholds, the default accent and the font character subsets all still agree.
 
@@ -105,9 +135,12 @@ thresholds, the default accent and the font character subsets all still agree.
 | `src/c/whoop-watchface.c` | Rendering, ring gauges, persisted readings and settings |
 | `src/pkjs/index.js`       | Phone side: settings, weather, Whoop refresh, AppMessage queue |
 | `src/pkjs/whoop.js`       | Whoop snapshot → watch payload, recovery zones, sample data |
+| `src/pkjs/whoop-auth.js`  | Whoop OAuth: login URL, token requests and responses, callback checks |
 | `src/pkjs/weather.js`     | Open-Meteo URL, response parsing, WMO → glyph mapping |
 | `src/pkjs/accent.js`      | Accent colour default and validation |
-| `src/pkjs/config.js`      | Clay config page |
+| `src/pkjs/config.js`      | Clay config page, including the Whoop section's Connect button |
+| `src/pkjs/emulator-config.js` | Hands the config page to the emulator as a `data:` URI |
+| `whoop-callback.html`     | Whoop's redirect target: hands the login code back to the watchface |
 
 ### Message protocol
 
