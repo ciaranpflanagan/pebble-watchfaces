@@ -1,11 +1,11 @@
-# Triad
+# Whebble
 
 A Whoop watchface for the **Pebble Time 2 (emery)**, in the same clean style as
 [Homezone](../console-watchface). The time sits up top; below it are three ring
 gauges for Whoop's core metrics: **recovery**, **sleep** and **strain**.
 
 <p align="center">
-  <img src="design-preview.png" alt="Design preview of Triad in five states">
+  <img src="design-preview.png" alt="Design preview of Whebble in five states">
 </p>
 
 > The preview is a browser render of the layout using the real fonts, not an

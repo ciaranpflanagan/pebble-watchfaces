@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Triad: connecting to Whoop</title>
+<title>Whebble: connecting to Whoop</title>
 <style>
   body { font: 16px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
          background: #111; color: #eee; margin: 0; padding: 32px 16px; }
@@ -11,7 +11,7 @@
 </style>
 </head>
 <body>
-<p id="message">Returning to Triad…</p>
+<p id="message">Returning to Whebble…</p>
 <script>
   // Whoop's OAuth login redirects here with ?code=…&state=… (or ?error=…).
   // This page holds no secrets: it only hands those values back to the
@@ -26,7 +26,7 @@
   //
   // Keep RETURN_TO_COOKIE in step with src/pkjs/config.js and the
   // 'whoopAuth' marker in step with CALLBACK_MARKER in src/pkjs/whoop-auth.js.
-  var RETURN_TO_COOKIE = 'triadWhoopReturnTo';
+  var RETURN_TO_COOKIE = 'whebbleWhoopReturnTo';
   var DEFAULT_RETURN_TO = 'pebblejs://close#';
 
   function readCookie(name) {
@@ -69,8 +69,8 @@
   }
 
   document.getElementById('message').textContent = payload.whoopAuth.error
-    ? 'Whoop login did not complete (' + payload.whoopAuth.error + '). Returning to Triad…'
-    : 'Logged in. Returning to Triad…';
+    ? 'Whoop login did not complete (' + payload.whoopAuth.error + '). Returning to Whebble…'
+    : 'Logged in. Returning to Whebble…';
 
   window.location.href = returnTo + encodeURIComponent(JSON.stringify(payload));
 </script>

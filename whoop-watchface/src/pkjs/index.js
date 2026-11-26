@@ -38,6 +38,7 @@ var WHOOP_API_TIMEOUT_MS = 15000;
 // ---------------------------------------------------------------------------
 // Settings — saved in localStorage, applied on ready and after config save
 // ---------------------------------------------------------------------------
+// Named from the face's old name, Triad. Kept so existing settings survive the rename.
 var SETTINGS_STORAGE_KEY = 'triadSettings';
 
 var DEFAULT_SETTINGS = {
@@ -151,6 +152,8 @@ function refreshWeather(settings) {
 //     lastError                   short reason shown on the config page
 //   }
 // ---------------------------------------------------------------------------
+// Named from the face's old name, Triad. Kept so an existing Whoop connection
+// survives the rename.
 var WHOOP_AUTH_STORAGE_KEY = 'triadWhoopAuth';
 var TOKEN_REQUEST_TIMEOUT_MS = 15000;
 

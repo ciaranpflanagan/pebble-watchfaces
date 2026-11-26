@@ -11,12 +11,12 @@ var accent = require('./accent.js');
 
 // The cookie that carries our return address to whoop-callback.html.
 // Keep in step with that page.
-var RETURN_TO_COOKIE = 'triadWhoopReturnTo';
+var RETURN_TO_COOKIE = 'whebbleWhoopReturnTo';
 
 var items = [
   {
     'type': 'heading',
-    'defaultValue': 'Triad'
+    'defaultValue': 'Whebble'
   },
   {
     'type': 'section',
@@ -116,7 +116,7 @@ var items = [
 function customFn() {
   var clayConfig = this;
   // Duplicated from RETURN_TO_COOKIE above: this function can't see it.
-  var returnToCookie = 'triadWhoopReturnTo';
+  var returnToCookie = 'whebbleWhoopReturnTo';
 
   clayConfig.on(clayConfig.EVENTS.AFTER_BUILD, function() {
     var whoop = (clayConfig.meta.userData && clayConfig.meta.userData.whoop) || {};

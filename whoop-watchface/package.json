@@ -11,7 +11,7 @@
     "pebble-clay": "^1.0.4"
   },
   "pebble": {
-    "displayName": "Triad",
+    "displayName": "Whebble",
     "uuid": "ff261e9b-8bb4-4c72-920f-f917a650a1bf",
     "sdkVersion": "3",
     "enableMultiJS": true,
