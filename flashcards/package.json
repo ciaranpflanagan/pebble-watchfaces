@@ -1,0 +1,54 @@
+{
+  "name": "flashcards",
+  "author": "Ciaran",
+  "version": "0.1.0",
+  "keywords": [
+    "pebble-app"
+  ],
+  "private": true,
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "pebble-clay": "^1.0.4"
+  },
+  "pebble": {
+    "displayName": "Cue Card",
+    "uuid": "36f4af21-7822-40b1-8304-2e6c6e5f01a8",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+      "emery"
+    ],
+    "capabilities": [
+      "configurable"
+    ],
+    "watchapp": {
+      "watchface": false
+    },
+    "messageKeys": [
+      "SETTINGS_THEME",
+      "SETTINGS_ACCENT",
+      "BLOB_KIND",
+      "BLOB_ID",
+      "BLOB_TITLE",
+      "BLOB_TOTAL",
+      "BLOB_INDEX",
+      "BLOB_DATA",
+      "DECK_REQUEST",
+      "LIB_ERROR",
+      "DECK_URL",
+      "DECK_TEXT"
+    ],
+    "resources": {
+      "media": [
+        {
+          "menuIcon": true,
+          "type": "png",
+          "name": "IMAGE_MENU_ICON",
+          "file": "images/menu_icon.png"
+        }
+      ]
+    }
+  }
+}
