@@ -49,4 +49,9 @@ See each project's README for its layout, settings and design notes.
 
 ## Licence
 
-[MIT](LICENSE)
+The code is under the [MIT licence](LICENSE).
+
+Homezone and Triad bundle the [Space Grotesk](https://github.com/floriankarsten/space-grotesk)
+and [Space Mono](https://github.com/googlefonts/spacemono) fonts, which are
+under the SIL Open Font License 1.1, not MIT. Their licence text is in each
+project's `resources/fonts/OFL.txt`.
