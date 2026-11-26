@@ -110,3 +110,132 @@ test('the C draws the labels the font test checks', () => {
     assert.ok(WATCHFACE_C.includes(s), s + ' not in the C');
   }
 });
+
+// --- Whoop API (v2) → snapshot -------------------------------------------
+// Fixtures follow the response shapes in https://developer.whoop.com/api
+
+const MIN = 60 * 1000;
+
+const SCORED_CYCLE = JSON.stringify({
+  records: [{
+    id: 93845, user_id: 10129, start: '2026-11-25T06:25:14.059Z', end: null,
+    timezone_offset: '-08:00', score_state: 'SCORED',
+    score: { strain: 12.4, kilojoule: 8288.297, average_heart_rate: 68, max_heart_rate: 141 }
+  }],
+  next_token: 'MTIzOjEyMzEyMw'
+});
+
+const SCORED_RECOVERY = JSON.stringify({
+  cycle_id: 93845, sleep_id: 'ecfc6a15-4661-442f-a9a4-f160dd7afae8', user_id: 10129,
+  score_state: 'SCORED',
+  score: { user_calibrating: false, recovery_score: 78, resting_heart_rate: 51,
+           hrv_rmssd_milli: 61.2, spo2_percentage: 95.6875, skin_temp_celsius: 33.7 }
+});
+
+const SCORED_SLEEP = JSON.stringify({
+  id: 'ecfc6a15-4661-442f-a9a4-f160dd7afae8', cycle_id: 93845, nap: false,
+  score_state: 'SCORED',
+  score: {
+    stage_summary: {
+      total_in_bed_time_milli: 520 * MIN,
+      total_awake_time_milli: 50 * MIN,
+      total_no_data_time_milli: 8 * MIN,
+      total_light_sleep_time_milli: 230 * MIN,
+      total_slow_wave_sleep_time_milli: 110 * MIN,
+      total_rem_sleep_time_milli: 122 * MIN,
+      sleep_cycle_count: 4, disturbance_count: 12
+    },
+    respiratory_rate: 16.1, sleep_performance_percentage: 91,
+    sleep_consistency_percentage: 90, sleep_efficiency_percentage: 91.7
+  }
+});
+
+test('API URLs are v2 and built from the cycle id', () => {
+  assert.strictEqual(whoop.latestCycleUrl(), 'https://api.prod.whoop.com/developer/v2/cycle?limit=1');
+  assert.strictEqual(whoop.cycleRecoveryUrl(93845),
+    'https://api.prod.whoop.com/developer/v2/cycle/93845/recovery');
+  assert.strictEqual(whoop.cycleSleepUrl(93845),
+    'https://api.prod.whoop.com/developer/v2/cycle/93845/sleep');
+  assert.throws(() => whoop.cycleSleepUrl('93845/../user'), /cycleSleepUrl: cycle id must be/);
+  assert.throws(() => whoop.cycleRecoveryUrl(1.5), /cycle id must be/);
+});
+
+test('API statuses are classified', () => {
+  assert.strictEqual(whoop.classifyApiStatus(200), 'ok');
+  assert.strictEqual(whoop.classifyApiStatus(404), 'none');
+  assert.strictEqual(whoop.classifyApiStatus(401), 'unauthorised');
+  assert.strictEqual(whoop.classifyApiStatus(429), 'rate_limited');
+  assert.strictEqual(whoop.classifyApiStatus(0), 'temporary');
+  assert.strictEqual(whoop.classifyApiStatus(503), 'temporary');
+});
+
+test('scored replies become a full snapshot and payload', () => {
+  const now = new Date('2026-11-25T21:00:00Z');
+  const snapshot = whoop.buildSnapshot({
+    cycle: whoop.parseLatestCycle(SCORED_CYCLE),
+    recovery: whoop.parseRecovery(SCORED_RECOVERY),
+    sleep: whoop.parseSleep(SCORED_SLEEP)
+  }, now);
+  assert.deepStrictEqual(snapshot, {
+    recovery: 78, sleepPerf: 91, sleepMins: 462, strain: 12.4, syncedAt: now
+  });
+  assert.deepStrictEqual(whoop.toWatchPayload(snapshot), {
+    WHOOP_RECOVERY: 78, WHOOP_SLEEP_PERF: 91, WHOOP_SLEEP_MINS: 462,
+    WHOOP_STRAIN: 124, WHOOP_SYNC_TIME: Math.floor(now.getTime() / 1000)
+  });
+});
+
+test('time asleep is light + deep + REM (in bed minus awake minus no data)', () => {
+  const summary = JSON.parse(SCORED_SLEEP).score.stage_summary;
+  const expected = (summary.total_in_bed_time_milli - summary.total_awake_time_milli -
+                    summary.total_no_data_time_milli) / MIN;
+  assert.strictEqual(whoop.sleepMinutes(summary), expected);
+  assert.strictEqual(whoop.sleepMinutes({ total_light_sleep_time_milli: 1 }), null);
+  assert.strictEqual(whoop.sleepMinutes(null), null);
+});
+
+test('PENDING_SCORE and UNSCORABLE records give nulls, shown as --', () => {
+  for (const state of ['PENDING_SCORE', 'UNSCORABLE']) {
+    const cycle = JSON.parse(SCORED_CYCLE);
+    cycle.records[0].score_state = state;
+    assert.deepStrictEqual(whoop.parseLatestCycle(JSON.stringify(cycle)), { id: 93845, strain: null });
+
+    const recovery = Object.assign(JSON.parse(SCORED_RECOVERY), { score_state: state });
+    assert.strictEqual(whoop.parseRecovery(JSON.stringify(recovery)), null);
+
+    const sleep = Object.assign(JSON.parse(SCORED_SLEEP), { score_state: state });
+    assert.deepStrictEqual(whoop.parseSleep(JSON.stringify(sleep)), { sleepPerf: null, sleepMins: null });
+  }
+});
+
+test('missing parts (no recovery yet, no cycles) become -1 on the watch', () => {
+  const now = new Date('2026-11-25T07:00:00Z');
+  const p = whoop.toWatchPayload(whoop.buildSnapshot({
+    cycle: whoop.parseLatestCycle(SCORED_CYCLE), recovery: null, sleep: null
+  }, now));
+  assert.strictEqual(p.WHOOP_STRAIN, 124);
+  assert.strictEqual(p.WHOOP_RECOVERY, -1);
+  assert.strictEqual(p.WHOOP_SLEEP_PERF, -1);
+  assert.strictEqual(p.WHOOP_SLEEP_MINS, -1);
+
+  assert.strictEqual(whoop.parseLatestCycle('{"records":[]}'), null);
+  const empty = whoop.toWatchPayload(whoop.buildSnapshot({ cycle: null }, now));
+  assert.strictEqual(empty.WHOOP_STRAIN, -1);
+  assert.strictEqual(empty.WHOOP_SYNC_TIME, Math.floor(now.getTime() / 1000));
+});
+
+test('malformed replies throw without quoting the data', () => {
+  assert.throws(() => whoop.parseLatestCycle('{"recovery_score": 7'), /^Error: Cycle reply was not valid JSON$/);
+  assert.throws(() => whoop.parseLatestCycle('{}'), /no records list/);
+  assert.throws(() => whoop.parseLatestCycle('{"records":[{"id":"x"}]}'), /no numeric id/);
+  assert.throws(() => whoop.parseRecovery('<html>'), /Recovery reply was not valid JSON/);
+});
+
+test('the manifest lets a real phone reach Whoop and the weather', () => {
+  const internet = MANIFEST.pebble.usesPermissions.find((p) => p.name === 'Internet');
+  assert.ok(internet, 'usesPermissions needs an Internet entry');
+  for (const host of [new URL(whoop.API_BASE).hostname, 'api.open-meteo.com']) {
+    assert.ok(internet.parameters.domains.includes(host), host + ' missing from Internet domains');
+  }
+  assert.ok(MANIFEST.pebble.usesPermissions.includes('Location'), 'Location needed for weather');
+});

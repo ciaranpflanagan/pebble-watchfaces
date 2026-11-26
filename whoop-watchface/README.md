@@ -14,17 +14,17 @@ gauges for Whoop's core metrics: **recovery**, **sleep** and **strain**.
 
 ## Status
 
-**Phase 2 of 4: connecting to Whoop.** The phone can log in to Whoop and keep
-its tokens fresh, but the face still draws a fixed sample snapshot
-(`USE_MOCK_WHOOP` in `src/pkjs/index.js`) until phase 3 fetches real data.
-Connecting works in the emulator only for now: a real phone needs the
-callback page hosted on https (see below).
+**Phase 3 of 4: live Whoop data.** The face shows your real recovery, sleep and
+strain, fetched every 15 minutes. Connecting works in the emulator only for
+now: a real phone needs the callback page hosted on https (see below). Set
+`USE_MOCK_WHOOP` in `src/pkjs/index.js` to `true` to draw a fixed sample
+snapshot instead, for design work without an account.
 
 | Phase | Scope | Status |
 |-------|-------|--------|
 | 1 | Layout, weather, settings, sample Whoop data | ✅ |
 | 2 | Whoop credentials on the config page, OAuth connect, token refresh | ✅ emulator |
-| 3 | Live recovery / sleep / strain from the Whoop API | — |
+| 3 | Live recovery / sleep / strain from the Whoop API | ✅ emulator |
 | 4 | Polish, release build | — |
 
 ## Layout
@@ -37,7 +37,7 @@ callback page hosted on https (see below).
   ────────────────────────────
    (78)      (91)      (12.4)    ← ring gauges
   RECOVERY   SLEEP     STRAIN
-  SLEPT 7H 42M      SYNC 21:32   ← hours asleep · last Whoop sync
+  SLEPT 7H 42M      SYNC 21:32   ← time asleep · last successful fetch
 ```
 
 | Ring | Value | Fill | Colour |
@@ -46,10 +46,12 @@ callback page hosted on https (see below).
 | Sleep | Sleep performance, % | 0–100 | Blue-violet |
 | Strain | Day strain, one decimal | 0–21 | Accent colour |
 
-- **Stale data:** if the last sync is more than 3 hours old, the rings and
-  values turn grey, so you can tell when the phone has stopped updating.
-- **No data:** values read `--` until the first sync, or while Whoop hasn't
-  scored a metric yet (e.g. recovery before you wake up).
+- **Stale data:** if the last successful fetch is more than 3 hours old, the
+  rings and values turn grey, so you can tell when the phone has stopped
+  updating. A failed fetch sends nothing, so the last readings stay up.
+- **No data:** values read `--` until the first sync, while you're not
+  connected, or while Whoop hasn't scored a metric yet (`PENDING_SCORE`,
+  `UNSCORABLE`, or no recovery for today's cycle yet).
 - **Restarts:** the watch saves the last readings and weather, so the face is
   complete straight away rather than waiting for the phone.
 
@@ -105,6 +107,23 @@ a redirect URL on the Whoop app, and set as `WHOOP_REDIRECT_URI_PHONE` in
 `src/pkjs/index.js`. Until then the config page explains that connecting on a
 phone isn't available yet.
 
+## Where the numbers come from
+
+Every 15 minutes the phone makes three Whoop API (v2) requests:
+
+| Request | Gives |
+|---------|-------|
+| `GET /v2/cycle?limit=1` | The current cycle (physiological day) and its **strain** |
+| `GET /v2/cycle/{id}/recovery` | That cycle's **recovery** score |
+| `GET /v2/cycle/{id}/sleep` | The sleep that started it: **sleep performance** and **time asleep** (light + deep + REM) |
+
+If Whoop rejects the access token (401), the phone refreshes it once and
+retries; a second refusal clears the connection and the config page asks you
+to reconnect. After a 429 (rate limited) the next poll is skipped.
+
+`package.json` declares the permissions a real phone needs: Internet access to
+`api.prod.whoop.com` and `api.open-meteo.com`, and Location for the weather.
+
 ## Building & running
 
 ```sh
@@ -134,7 +153,7 @@ thresholds, the default accent and the font character subsets all still agree.
 |------|------|
 | `src/c/whoop-watchface.c` | Rendering, ring gauges, persisted readings and settings |
 | `src/pkjs/index.js`       | Phone side: settings, weather, Whoop refresh, AppMessage queue |
-| `src/pkjs/whoop.js`       | Whoop snapshot → watch payload, recovery zones, sample data |
+| `src/pkjs/whoop.js`       | Whoop API replies → snapshot → watch payload, recovery zones, sample data |
 | `src/pkjs/whoop-auth.js`  | Whoop OAuth: login URL, token requests and responses, callback checks |
 | `src/pkjs/weather.js`     | Open-Meteo URL, response parsing, WMO → glyph mapping |
 | `src/pkjs/accent.js`      | Accent colour default and validation |

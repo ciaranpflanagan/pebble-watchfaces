@@ -15,9 +15,9 @@ var clay      = new Clay(config.items, config.customFn, { autoHandleEvents: fals
 // ---------------------------------------------------------------------------
 var IS_EMULATOR = true;
 
-// Phase 1: the face shows a fixed sample snapshot until the Whoop API is wired
-// up. Set to false once real data is available.
-var USE_MOCK_WHOOP = true;
+// true: the face shows a fixed sample snapshot instead of real Whoop data,
+// for design work without an account.
+var USE_MOCK_WHOOP = false;
 
 // Where Whoop's login sends the user back to. It must exactly match a redirect
 // URL registered on the Whoop developer app.
@@ -33,6 +33,7 @@ var DEFAULT_LON = -122.3321;
 
 var WEATHER_REFRESH_MS = 30 * 60 * 1000;
 var WHOOP_REFRESH_MS   = 15 * 60 * 1000;
+var WHOOP_API_TIMEOUT_MS = 15000;
 
 // ---------------------------------------------------------------------------
 // Settings — saved in localStorage, applied on ready and after config save
@@ -370,20 +371,171 @@ function whoopConfigPageData() {
 }
 
 // ---------------------------------------------------------------------------
-// Whoop data
+// Whoop data. Parsing lives in whoop.js; this does the requests.
 // ---------------------------------------------------------------------------
-function refreshWhoop() {
-  // Phase 2: keep the connection alive (refreshing the token when due) so it
-  // can be tested before phase 3 fetches real data with it.
-  withWhoopAccessToken(function(error) {
-    if (error) console.log('Whoop: ' + error.message);
-    else console.log('Whoop: access token ready');
-  });
 
+// After a 429, no Whoop data requests until this time (epoch ms).
+var whoopRateLimitedUntil = 0;
+// One refresh at a time: connecting and the timer can both start one.
+var whoopFetchInFlight = false;
+
+/** GET a Whoop API URL; done(status, bodyText). status 0 = no response. */
+function whoopGet(url, accessToken, done) {
+  var finished = false;
+  function finish(status, text) {
+    if (finished) return;
+    finished = true;
+    done(status, text);
+  }
+
+  var xhr = new XMLHttpRequest();
+  xhr.onload    = function() { finish(this.status, this.responseText); };
+  xhr.onerror   = function() { finish(0, ''); };
+  xhr.ontimeout = function() { finish(0, ''); };
+  xhr.open('GET', url);
+  // The token goes in this header only; never log it or the headers.
+  xhr.setRequestHeader('Authorization', 'Bearer ' + accessToken);
+  try {
+    xhr.timeout = WHOOP_API_TIMEOUT_MS;
+  } catch (e) {
+    console.log('XHR timeout not supported here; relying on the platform default');
+  }
+  xhr.send();
+}
+
+/**
+ * Fetches the latest cycle, then its recovery and sleep in parallel.
+ * done(failure, parts): failure is null or { kind, message } with kind from
+ * whoop.classifyApiStatus (or 'malformed'); parts suits whoop.buildSnapshot.
+ */
+function fetchWhoopParts(accessToken, done) {
+  function failureFor(status, what) {
+    return { kind: whoop.classifyApiStatus(status),
+             message: what + ' request failed: ' + (status ? 'HTTP ' + status : 'no response') };
+  }
+
+  whoopGet(whoop.latestCycleUrl(), accessToken, function(status, text) {
+    if (whoop.classifyApiStatus(status) !== 'ok') {
+      done(failureFor(status, 'Cycle'));
+      return;
+    }
+    var cycle;
+    try {
+      cycle = whoop.parseLatestCycle(text);
+    } catch (e) {
+      done({ kind: 'malformed', message: e.message });
+      return;
+    }
+    if (!cycle) {
+      // No cycles at all yet: everything shows "--".
+      done(null, { cycle: null, recovery: null, sleep: null });
+      return;
+    }
+
+    var parts = { cycle: cycle, recovery: null, sleep: null };
+    var pending = 2;
+    var failed = null;
+    function settle(failure) {
+      if (failure && !failed) failed = failure;
+      pending -= 1;
+      if (pending === 0) done(failed, failed ? null : parts);
+    }
+
+    // For both: 404 just means "not scored yet", which leaves the part null.
+    whoopGet(whoop.cycleRecoveryUrl(cycle.id), accessToken, function(rStatus, rText) {
+      var kind = whoop.classifyApiStatus(rStatus);
+      if (kind === 'none') return settle(null);
+      if (kind !== 'ok') return settle(failureFor(rStatus, 'Recovery'));
+      try {
+        parts.recovery = whoop.parseRecovery(rText);
+        settle(null);
+      } catch (e) {
+        settle({ kind: 'malformed', message: e.message });
+      }
+    });
+
+    whoopGet(whoop.cycleSleepUrl(cycle.id), accessToken, function(sStatus, sText) {
+      var kind = whoop.classifyApiStatus(sStatus);
+      if (kind === 'none') return settle(null);
+      if (kind !== 'ok') return settle(failureFor(sStatus, 'Sleep'));
+      try {
+        parts.sleep = whoop.parseSleep(sText);
+        settle(null);
+      } catch (e) {
+        settle({ kind: 'malformed', message: e.message });
+      }
+    });
+  });
+}
+
+/** Marks the stored access token expired, so the next use refreshes it. */
+function expireWhoopAccessToken() {
+  var auth = loadWhoopAuth();
+  auth.expiresAt = 0;
+  saveWhoopAuth(auth);
+}
+
+/**
+ * Fetches Whoop data and sends it to the watch. On failure nothing is sent:
+ * the watch keeps its last readings and greys them out once they're stale.
+ *
+ * @param {boolean} [isRetry] - true on the one retry after a 401
+ */
+function refreshWhoop(isRetry) {
   if (USE_MOCK_WHOOP) {
     send(whoop.toWatchPayload(whoop.mockSnapshot(new Date())), 'Whoop (mock)');
+    return;
   }
-  // Phase 3: fetch the latest cycle, recovery and sleep with the access token.
+  if (Date.now() < whoopRateLimitedUntil) {
+    console.log('Whoop: rate limited, skipping until ' +
+                new Date(whoopRateLimitedUntil).toISOString());
+    return;
+  }
+  if (whoopFetchInFlight && !isRetry) {
+    console.log('Whoop: a refresh is already running, skipping this one');
+    return;
+  }
+  whoopFetchInFlight = true;
+
+  withWhoopAccessToken(function(error, accessToken) {
+    if (error) {
+      whoopFetchInFlight = false;
+      console.log('Whoop: not fetching data: ' + error.message);
+      return;
+    }
+
+    fetchWhoopParts(accessToken, function(failure, parts) {
+      if (!failure) {
+        whoopFetchInFlight = false;
+        var snapshot = whoop.buildSnapshot(parts, new Date());
+        console.log('Whoop data: recovery ' + snapshot.recovery + ', sleep ' + snapshot.sleepPerf +
+                    '% / ' + snapshot.sleepMins + ' min, strain ' + snapshot.strain);
+        send(whoop.toWatchPayload(snapshot), 'Whoop');
+        return;
+      }
+
+      console.log('Whoop: ' + failure.message + ' [' + failure.kind + ']');
+
+      if (failure.kind === 'unauthorised' && !isRetry) {
+        // The token may have been revoked early: refresh it once and retry.
+        expireWhoopAccessToken();
+        refreshWhoop(true);
+        return;
+      }
+      whoopFetchInFlight = false;
+
+      if (failure.kind === 'unauthorised') {
+        // Still refused with a brand-new token: access was withdrawn.
+        var auth = loadWhoopAuth();
+        clearWhoopTokens(auth);
+        auth.lastError = 'Whoop refused access. Reconnect in settings.';
+        saveWhoopAuth(auth);
+      } else if (failure.kind === 'rate_limited') {
+        // Skip the next poll.
+        whoopRateLimitedUntil = Date.now() + WHOOP_REFRESH_MS;
+      }
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------

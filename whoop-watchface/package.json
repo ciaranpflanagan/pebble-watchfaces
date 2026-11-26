@@ -32,6 +32,13 @@
       "SETTINGS_THEME",
       "SETTINGS_ACCENT"
     ],
+    "usesPermissions": [
+      "Location",
+      {
+        "name": "Internet",
+        "parameters": { "domains": ["api.open-meteo.com", "api.prod.whoop.com"] }
+      }
+    ],
     "resources": {
       "media": [
         {
